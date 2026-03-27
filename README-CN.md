@@ -117,13 +117,16 @@ Token 有效期 30 分钟，到期前 60 秒自动刷新。
 
 规则：`VMWARE_ARIA_<TARGET大写>_PASSWORD`，连字符转为下划线。
 
-## 配套 Skill
+### 配套 Skill
 
-| Skill | 用途 |
-|-------|------|
-| [vmware-aiops](https://github.com/zw008/VMware-AIops) | 虚拟机生命周期：创建、克隆、快照、开关机 |
-| [vmware-nsx](https://github.com/zw008/VMware-NSX) | NSX 网络：Segment、网关、NAT、路由 |
-| [vmware-monitor](https://github.com/zw008/VMware-Monitor) | vSphere 只读库存和事件查询 |
+| Skill | 功能范围 | 工具数 | 安装 |
+|-------|---------|:-----:|------|
+| **[vmware-aiops](https://github.com/zw008/VMware-AIops)** ⭐ 入口 | VM 生命周期、部署、Guest 操作、集群管理 | 31 | `uv tool install vmware-aiops` |
+| **[vmware-monitor](https://github.com/zw008/VMware-Monitor)** | 只读监控：告警、事件、VM 信息 | 8 | `uv tool install vmware-monitor` |
+| **[vmware-nsx](https://github.com/zw008/VMware-NSX)** | NSX 网络：Segment、网关、NAT、IPAM | 31 | `uv tool install vmware-nsx-mgmt` |
+| **[vmware-nsx-security](https://github.com/zw008/VMware-NSX-Security)** | DFW 微分段、安全组、Traceflow | 20 | `uv tool install vmware-nsx-security` |
+| **[vmware-storage](https://github.com/zw008/VMware-Storage)** | 数据存储、iSCSI、vSAN | 11 | `uv tool install vmware-storage` |
+| **[vmware-vks](https://github.com/zw008/VMware-VKS)** | Tanzu 命名空间、TKC 集群生命周期 | 20 | `uv tool install vmware-vks` |
 
 ## 安全性
 

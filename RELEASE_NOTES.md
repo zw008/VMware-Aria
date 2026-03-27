@@ -1,5 +1,13 @@
 # Release Notes
 
+## v1.3.1 (2026-03-27)
+
+### Documentation
+
+- Updated README.md and README-CN.md companion skills table: expanded to full 6-skill family with tool counts and install commands, added vmware-nsx-security entry
+
+---
+
 ## v1.3.0 (2026-03-27)
 
 Initial release of `vmware-aria` — VMware Aria Operations AI monitoring skill.

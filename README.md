@@ -125,13 +125,16 @@ Aria Operations Suite API
 VMs / Hosts / Clusters / Alerts / Capacity
 ```
 
-## Companion Skills
+### Companion Skills
 
-| Skill | Purpose |
-|-------|---------|
-| [vmware-aiops](https://github.com/zw008/VMware-AIops) | VM lifecycle: create, clone, snapshot, power |
-| [vmware-nsx](https://github.com/zw008/VMware-NSX) | NSX networking: segments, gateways, NAT, routing |
-| [vmware-monitor](https://github.com/zw008/VMware-Monitor) | Read-only vSphere inventory and events |
+| Skill | Scope | Tools | Install |
+|-------|-------|:-----:|---------|
+| **[vmware-aiops](https://github.com/zw008/VMware-AIops)** ⭐ entry point | VM lifecycle, deployment, guest ops, clusters | 31 | `uv tool install vmware-aiops` |
+| **[vmware-monitor](https://github.com/zw008/VMware-Monitor)** | Read-only monitoring, alarms, events, VM info | 8 | `uv tool install vmware-monitor` |
+| **[vmware-nsx](https://github.com/zw008/VMware-NSX)** | NSX networking: segments, gateways, NAT, IPAM | 31 | `uv tool install vmware-nsx-mgmt` |
+| **[vmware-nsx-security](https://github.com/zw008/VMware-NSX-Security)** | DFW microsegmentation, security groups, Traceflow | 20 | `uv tool install vmware-nsx-security` |
+| **[vmware-storage](https://github.com/zw008/VMware-Storage)** | Datastores, iSCSI, vSAN | 11 | `uv tool install vmware-storage` |
+| **[vmware-vks](https://github.com/zw008/VMware-VKS)** | Tanzu Namespaces, TKC cluster lifecycle | 20 | `uv tool install vmware-vks` |
 
 ## Security
 
