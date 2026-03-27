@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.zw008/vmware-aria",
+  "title": "VMware Aria Operations",
+  "description": "VMware Aria Operations (vRealize Operations) monitoring and capacity planning with 18 MCP tools: resources, alerts, capacity, anomaly detection, and platform health.",
+  "repository": {
+    "url": "https://github.com/zw008/VMware-Aria",
+    "source": "github"
+  },
+  "version": "1.3.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "vmware-aria",
+      "version": "1.3.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

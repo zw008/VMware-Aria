@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "vmware-aria": {
+      "command": "vmware-aria-mcp",
+      "env": {
+        "VMWARE_ARIA_CONFIG": "~/.vmware-aria/config.yaml"
+      }
+    }
+  }
+}

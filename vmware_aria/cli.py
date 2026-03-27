@@ -1,0 +1,479 @@
+"""CLI entry point for VMware Aria Operations.
+
+Provides commands for resource monitoring, alert management, capacity planning,
+anomaly detection, and platform health checks.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Annotated
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from vmware_aria.config import CONFIG_DIR
+from vmware_aria.notify.audit import AuditLogger
+
+_audit = AuditLogger()
+
+app = typer.Typer(
+    name="vmware-aria",
+    help="VMware Aria Operations monitoring, alerting, and capacity planning.",
+    no_args_is_help=True,
+)
+console = Console()
+
+# ─── Sub-command groups ──────────────────────────────────────────────────────
+
+resource_app = typer.Typer(help="Resource queries: list, get, metrics, health, top consumers.")
+alert_app = typer.Typer(help="Alert management: list, get, acknowledge, cancel, definitions.")
+capacity_app = typer.Typer(help="Capacity planning: overview, remaining, time-remaining, rightsizing.")
+anomaly_app = typer.Typer(help="Anomaly detection: list anomalies, risk badge.")
+health_app = typer.Typer(help="Platform health: Aria node status, collector groups.")
+
+app.add_typer(resource_app, name="resource")
+app.add_typer(alert_app, name="alert")
+app.add_typer(capacity_app, name="capacity")
+app.add_typer(anomaly_app, name="anomaly")
+app.add_typer(health_app, name="health")
+
+# ─── Type aliases ────────────────────────────────────────────────────────────
+
+TargetOption = Annotated[
+    str | None, typer.Option("--target", "-t", help="Target name from config")
+]
+ConfigOption = Annotated[
+    Path | None, typer.Option("--config", "-c", help="Config file path")
+]
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+
+def _get_connection(target: str | None, config_path: Path | None = None):
+    """Return (AriaClient, AppConfig)."""
+    from vmware_aria.config import load_config
+    from vmware_aria.connection import ConnectionManager
+
+    cfg = load_config(config_path)
+    mgr = ConnectionManager(cfg)
+    name = target or cfg.default_target
+    return mgr.connect(name), cfg
+
+
+def _json_output(data: object) -> None:
+    """Print data as formatted JSON."""
+    console.print_json(json.dumps(data, indent=2, default=str))
+
+
+# ─── Doctor ──────────────────────────────────────────────────────────────────
+
+
+@app.command()
+def doctor(
+    skip_auth: Annotated[bool, typer.Option("--skip-auth", help="Skip authentication check")] = False,
+    config: ConfigOption = None,
+) -> None:
+    """Run pre-flight diagnostics for Aria Operations connectivity."""
+    from vmware_aria.doctor import run_doctor
+
+    ok = run_doctor(config_path=config, skip_auth=skip_auth)
+    raise typer.Exit(0 if ok else 1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESOURCE commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@resource_app.command("list")
+def resource_list(
+    kind: Annotated[str, typer.Option("--kind", "-k", help="Resource kind")] = "VirtualMachine",
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Max results")] = 50,
+    name_filter: Annotated[str | None, typer.Option("--name", help="Filter by name substring")] = None,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List resources by kind (VM, HostSystem, ClusterComputeResource, etc.)."""
+    from vmware_aria.ops.resources import list_resources
+
+    client, _ = _get_connection(target, config)
+    items = list_resources(client, resource_kind=kind, limit=limit, name_filter=name_filter)
+
+    table = Table(title=f"Resources ({kind})", show_lines=False)
+    table.add_column("Name", style="bold")
+    table.add_column("ID")
+    table.add_column("Health")
+    table.add_column("Status")
+
+    for r in items:
+        health = f"{r['health_color']} ({r['health_score']})" if r.get("health_score") is not None else r["health_color"]
+        table.add_row(r["name"], r["id"][:36], health, r["status"])
+
+    console.print(table)
+
+
+@resource_app.command("get")
+def resource_get(
+    resource_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get full details for a specific resource by ID."""
+    from vmware_aria.ops.resources import get_resource
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_resource(client, resource_id))
+
+
+@resource_app.command("metrics")
+def resource_metrics(
+    resource_id: str,
+    metrics: Annotated[str, typer.Option("--metrics", "-m", help="Comma-separated metric keys")] = "cpu|usage_average,mem|usage_average",
+    hours: Annotated[int, typer.Option("--hours", help="History window in hours")] = 1,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Fetch time-series metrics for a resource."""
+    import time as _time
+
+    from vmware_aria.ops.resources import get_resource_metrics
+
+    client, _ = _get_connection(target, config)
+    metric_keys = [k.strip() for k in metrics.split(",") if k.strip()]
+    end_ms = int(_time.time() * 1000)
+    begin_ms = end_ms - (hours * 3_600_000)
+    result = get_resource_metrics(client, resource_id, metric_keys, begin_time_ms=begin_ms, end_time_ms=end_ms)
+    _json_output(result)
+
+
+@resource_app.command("health")
+def resource_health(
+    resource_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get health badge scores for a resource."""
+    from vmware_aria.ops.resources import get_resource_health
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_resource_health(client, resource_id))
+
+
+@resource_app.command("top")
+def resource_top(
+    metric: Annotated[str, typer.Option("--metric", help="Metric key to rank by")] = "cpu|usage_average",
+    kind: Annotated[str, typer.Option("--kind", "-k", help="Resource kind")] = "VirtualMachine",
+    top_n: Annotated[int, typer.Option("--top", "-n", help="Number of top consumers")] = 10,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List top resource consumers by a specific metric."""
+    from vmware_aria.ops.resources import get_top_consumers
+
+    client, _ = _get_connection(target, config)
+    items = get_top_consumers(client, metric_key=metric, resource_kind=kind, top_n=top_n)
+
+    table = Table(title=f"Top {top_n} by {metric}", show_lines=False)
+    table.add_column("Rank", justify="right")
+    table.add_column("Name", style="bold")
+    table.add_column("Value")
+    table.add_column("Unit")
+
+    for i, r in enumerate(items, 1):
+        table.add_row(str(i), r["name"], str(r.get("value", "")), r.get("unit", ""))
+
+    console.print(table)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ALERT commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@alert_app.command("list")
+def alert_list(
+    active_only: Annotated[bool, typer.Option("--active/--all", help="Active alerts only")] = True,
+    criticality: Annotated[str | None, typer.Option("--criticality", help="Filter by criticality")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 50,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List alerts, optionally filtered by criticality."""
+    from vmware_aria.ops.alerts import list_alerts
+
+    client, _ = _get_connection(target, config)
+    items = list_alerts(client, active_only=active_only, criticality=criticality, limit=limit)
+
+    table = Table(title="Aria Operations Alerts", show_lines=False)
+    table.add_column("ID")
+    table.add_column("Name", style="bold")
+    table.add_column("Criticality")
+    table.add_column("Status")
+    table.add_column("Resource")
+
+    for a in items:
+        table.add_row(a["id"][:36], a["name"][:60], a["criticality"], a["status"], a["resource_name"][:40])
+
+    console.print(table)
+
+
+@alert_app.command("get")
+def alert_get(
+    alert_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get full details for a specific alert."""
+    from vmware_aria.ops.alerts import get_alert
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_alert(client, alert_id))
+
+
+@alert_app.command("acknowledge")
+def alert_acknowledge(
+    alert_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")] = False,
+) -> None:
+    """Acknowledge an active alert."""
+    from vmware_aria.ops.alerts import acknowledge_alert
+
+    if not yes:
+        typer.confirm(f"Acknowledge alert {alert_id}?", abort=True)
+
+    client, cfg = _get_connection(target, config)
+    target_name = target or cfg.default_target or "default"
+    result = acknowledge_alert(client, alert_id, audit_logger=_audit, target_name=target_name)
+    _json_output(result)
+
+
+@alert_app.command("cancel")
+def alert_cancel(
+    alert_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")] = False,
+) -> None:
+    """Cancel (dismiss) an active alert."""
+    from vmware_aria.ops.alerts import cancel_alert
+
+    if not yes:
+        typer.confirm(f"Cancel alert {alert_id}? This will dismiss it.", abort=True)
+
+    client, cfg = _get_connection(target, config)
+    target_name = target or cfg.default_target or "default"
+    result = cancel_alert(client, alert_id, audit_logger=_audit, target_name=target_name)
+    _json_output(result)
+
+
+@alert_app.command("definitions")
+def alert_definitions(
+    name_filter: Annotated[str | None, typer.Option("--name", help="Filter by name substring")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 50,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List alert definitions (templates that generate alerts)."""
+    from vmware_aria.ops.alerts import list_alert_definitions
+
+    client, _ = _get_connection(target, config)
+    items = list_alert_definitions(client, name_filter=name_filter, limit=limit)
+
+    table = Table(title="Alert Definitions", show_lines=False)
+    table.add_column("Name", style="bold")
+    table.add_column("Criticality")
+    table.add_column("Resource Kind")
+    table.add_column("Enabled")
+
+    for d in items:
+        table.add_row(d["name"][:60], d["criticality"], d["resource_kind"], str(d["enabled"]))
+
+    console.print(table)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAPACITY commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@capacity_app.command("overview")
+def capacity_overview(
+    cluster_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get capacity recommendations for a cluster."""
+    from vmware_aria.ops.capacity import get_capacity_overview
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_capacity_overview(client, cluster_id))
+
+
+@capacity_app.command("remaining")
+def capacity_remaining(
+    resource_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get remaining capacity metrics for a cluster or host."""
+    from vmware_aria.ops.capacity import get_remaining_capacity
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_remaining_capacity(client, resource_id))
+
+
+@capacity_app.command("time-remaining")
+def capacity_time_remaining(
+    resource_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Predict when a cluster will exhaust its capacity dimensions."""
+    from vmware_aria.ops.capacity import get_time_remaining
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_time_remaining(client, resource_id))
+
+
+@capacity_app.command("rightsizing")
+def capacity_rightsizing(
+    resource_id: Annotated[str | None, typer.Option("--resource-id", help="Scope to a specific VM")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List VM rightsizing recommendations."""
+    from vmware_aria.ops.capacity import list_rightsizing_recommendations
+
+    client, _ = _get_connection(target, config)
+    items = list_rightsizing_recommendations(client, resource_id=resource_id, limit=limit)
+
+    table = Table(title="Rightsizing Recommendations", show_lines=False)
+    table.add_column("VM Name", style="bold")
+    table.add_column("Type")
+    table.add_column("Current CPU")
+    table.add_column("Rec CPU")
+    table.add_column("Current Mem MB")
+    table.add_column("Rec Mem MB")
+
+    for r in items:
+        table.add_row(
+            r["resource_name"][:40],
+            r["recommendation_type"],
+            str(r.get("current_cpu_count", "")),
+            str(r.get("recommended_cpu_count", "")),
+            str(r.get("current_memory_mb", "")),
+            str(r.get("recommended_memory_mb", "")),
+        )
+
+    console.print(table)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ANOMALY commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@anomaly_app.command("list")
+def anomaly_list(
+    resource_id: Annotated[str | None, typer.Option("--resource-id", help="Scope to a resource")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List anomalies detected by Aria Operations."""
+    from vmware_aria.ops.anomaly import list_anomalies
+
+    client, _ = _get_connection(target, config)
+    items = list_anomalies(client, resource_id=resource_id, limit=limit)
+
+    table = Table(title="Anomalies", show_lines=False)
+    table.add_column("Resource", style="bold")
+    table.add_column("Metric")
+    table.add_column("Severity")
+    table.add_column("Observed")
+    table.add_column("Expected")
+
+    for a in items:
+        table.add_row(
+            a["resource_name"][:40],
+            a["metric_key"],
+            a["severity"],
+            str(a.get("observed_value", "")),
+            str(a.get("expected_value", "")),
+        )
+
+    console.print(table)
+
+
+@anomaly_app.command("risk")
+def anomaly_risk(
+    resource_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get risk badge score for a resource."""
+    from vmware_aria.ops.anomaly import get_resource_riskbadge
+
+    client, _ = _get_connection(target, config)
+    _json_output(get_resource_riskbadge(client, resource_id))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HEALTH commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@health_app.command("status")
+def health_status(
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Check Aria Operations platform health (all internal services)."""
+    from vmware_aria.ops.health import get_aria_health
+
+    client, _ = _get_connection(target, config)
+    data = get_aria_health(client)
+
+    overall = "[green]HEALTHY[/green]" if data["all_services_healthy"] else "[red]DEGRADED[/red]"
+    console.print(f"\nAria Operations Platform: {overall}")
+    console.print(f"Services: {data['service_count']} total, {len(data['unhealthy_services'])} unhealthy\n")
+
+    if data["unhealthy_services"]:
+        table = Table(title="Unhealthy Services", show_lines=False)
+        table.add_column("Service", style="bold")
+        table.add_column("Status")
+        table.add_column("Message")
+        for s in data["unhealthy_services"]:
+            table.add_row(s["name"], s["status"], s.get("message", ""))
+        console.print(table)
+
+
+@health_app.command("collectors")
+def health_collectors(
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List collector groups and member collector status."""
+    from vmware_aria.ops.health import list_collector_groups
+
+    client, _ = _get_connection(target, config)
+    groups = list_collector_groups(client)
+
+    for g in groups:
+        console.print(f"\n[bold]{g['name']}[/bold] (id: {g['id']}) — {g['collector_count']} collector(s)")
+        table = Table(show_header=True, show_lines=False)
+        table.add_column("Name")
+        table.add_column("State")
+        table.add_column("Type")
+        table.add_column("Host")
+        for c in g["collectors"]:
+            state_style = "green" if c["state"] == "RUNNING" else "red"
+            table.add_row(c["name"], f"[{state_style}]{c['state']}[/{state_style}]", c["type"], c["host"])
+        console.print(table)

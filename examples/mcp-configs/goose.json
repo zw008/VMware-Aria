@@ -1,0 +1,11 @@
+{
+  "extensions": {
+    "vmware-aria": {
+      "type": "stdio",
+      "cmd": "vmware-aria-mcp",
+      "env": {
+        "VMWARE_ARIA_CONFIG": "~/.vmware-aria/config.yaml"
+      }
+    }
+  }
+}

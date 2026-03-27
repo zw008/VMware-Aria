@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vmware-aria": {
+      "command": "vmware-aria-mcp",
+      "env": {
+        "VMWARE_ARIA_CONFIG": "/Users/<your-username>/.vmware-aria/config.yaml",
+        "VMWARE_ARIA_PROD_PASSWORD": "<your-password>"
+      }
+    }
+  }
+}

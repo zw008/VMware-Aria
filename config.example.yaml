@@ -1,0 +1,23 @@
+# VMware Aria Operations Configuration
+# Copy to ~/.vmware-aria/config.yaml and edit
+
+targets:
+  prod:
+    host: aria-ops.example.com
+    username: admin
+    port: 443
+    verify_ssl: true
+    auth_source: LOCAL   # LOCAL | LDAP | AD
+  lab:
+    host: 10.0.0.100
+    username: admin
+    port: 443
+    verify_ssl: false
+    auth_source: LOCAL
+
+default_target: prod
+
+# Passwords are loaded from environment variables:
+# VMWARE_ARIA_PROD_PASSWORD=xxx
+# VMWARE_ARIA_LAB_PASSWORD=xxx
+# Or from ~/.vmware-aria/.env file

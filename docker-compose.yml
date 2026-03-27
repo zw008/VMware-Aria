@@ -1,0 +1,8 @@
+services:
+  vmware-aria-mcp:
+    build: .
+    volumes:
+      - ~/.vmware-aria:/root/.vmware-aria:ro
+    environment:
+      - VMWARE_ARIA_CONFIG=/root/.vmware-aria/config.yaml
+    stdin_open: true
