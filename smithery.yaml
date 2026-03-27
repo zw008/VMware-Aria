@@ -1,0 +1,15 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      config_path:
+        type: string
+        description: "Path to vmware-aria config.yaml (default: ~/.vmware-aria/config.yaml)"
+    required: []
+  commandFunction: |
+    (config) => ({
+      command: "vmware-aria-mcp",
+      args: [],
+      env: config.config_path ? { VMWARE_ARIA_CONFIG: config.config_path } : {}
+    })
