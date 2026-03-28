@@ -3,7 +3,8 @@
 This module exposes VMware Aria Operations management tools via the Model
 Context Protocol (MCP) using stdio transport.  Each ``@mcp.tool()``
 function delegates to the corresponding function in the ``vmware_aria``
-package (ops.resources, ops.alerts, ops.capacity, ops.anomaly, ops.health).
+package (ops.resources, ops.alerts, ops.capacity, ops.anomaly, ops.health,
+ops.reports).
 
 Tool categories
 ---------------
@@ -13,6 +14,9 @@ Tool categories
 * **Alerts** (5 tools, 3 read + 2 write): list_alerts, get_alert,
   list_alert_definitions, acknowledge_alert, cancel_alert
 
+* **Alert Definitions** (4 tools, write): list_symptom_definitions,
+  create_alert_definition, set_alert_definition_state, delete_alert_definition
+
 * **Capacity** (4 tools, read-only): get_capacity_overview,
   get_remaining_capacity, get_time_remaining,
   list_rightsizing_recommendations
@@ -20,6 +24,9 @@ Tool categories
 * **Anomaly** (2 tools, read-only): list_anomalies, get_resource_riskbadge
 
 * **Health** (2 tools, read-only): get_aria_health, list_collector_groups
+
+* **Reports** (5 tools): list_report_definitions, generate_report,
+  list_reports, get_report, delete_report
 
 Security considerations
 -----------------------
@@ -421,6 +428,225 @@ def list_collector_groups(target: str | None = None) -> list[dict]:
     from vmware_aria.ops.health import list_collector_groups as _list
 
     return _list(_get_connection(target))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ALERT DEFINITION management tools (4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@mcp.tool()
+def list_symptom_definitions(
+    name_filter: str | None = None,
+    resource_kind: str | None = None,
+    limit: int = 100,
+    target: str | None = None,
+) -> list[dict]:
+    """List symptom definitions — use the returned IDs when calling create_alert_definition.
+
+    Args:
+        name_filter: Optional substring to filter by symptom name (case-insensitive).
+        resource_kind: Optional resource kind filter, e.g. VirtualMachine, HostSystem.
+        limit: Maximum number of symptom definitions to return (1–500). Default 100.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.alerts import list_symptom_definitions as _list
+
+    return _list(_get_connection(target), name_filter=name_filter, resource_kind=resource_kind, limit=limit)
+
+
+@mcp.tool()
+def create_alert_definition(
+    name: str,
+    description: str,
+    resource_kind: str,
+    symptom_definition_ids: list[str],
+    criticality: str = "WARNING",
+    adapter_kind: str = "VMWARE",
+    target: str | None = None,
+) -> dict:
+    """Create a new alert definition referencing existing symptom definitions.
+
+    Use list_symptom_definitions() to find symptom_definition_ids.
+
+    Args:
+        name: Alert definition name (must be unique in Aria Operations).
+        description: Human-readable description of when/why this alert fires.
+        resource_kind: Resource kind this alert applies to: VirtualMachine,
+            HostSystem, ClusterComputeResource, Datastore.
+        symptom_definition_ids: List of symptom definition UUIDs. ANY one symptom
+            firing will trigger the alert.
+        criticality: Alert severity: INFORMATION, WARNING, IMMEDIATE, CRITICAL.
+        adapter_kind: Adapter kind key. Default VMWARE (vSphere adapter).
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.alerts import create_alert_definition as _create
+
+    return _create(
+        _get_connection(target),
+        name=name,
+        description=description,
+        resource_kind=resource_kind,
+        symptom_definition_ids=symptom_definition_ids,
+        criticality=criticality,
+        adapter_kind=adapter_kind,
+        audit_logger=_audit,
+        target_name=_target_name(target),
+    )
+
+
+@mcp.tool()
+def set_alert_definition_state(
+    definition_id: str,
+    enabled: bool,
+    target: str | None = None,
+) -> dict:
+    """Enable or disable an existing alert definition.
+
+    Args:
+        definition_id: Alert definition UUID (from list_alert_definitions).
+        enabled: True to enable the definition, False to disable it.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.alerts import set_alert_definition_state as _set_state
+
+    return _set_state(
+        _get_connection(target),
+        definition_id=definition_id,
+        enabled=enabled,
+        audit_logger=_audit,
+        target_name=_target_name(target),
+    )
+
+
+@mcp.tool()
+def delete_alert_definition(
+    definition_id: str,
+    target: str | None = None,
+) -> dict:
+    """Permanently delete an alert definition.
+
+    This WRITE operation removes the alert definition from Aria Operations.
+    Active alerts generated by this definition will not be affected.
+
+    Args:
+        definition_id: Alert definition UUID to delete.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.alerts import delete_alert_definition as _delete
+
+    return _delete(
+        _get_connection(target),
+        definition_id=definition_id,
+        audit_logger=_audit,
+        target_name=_target_name(target),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REPORT tools (5)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@mcp.tool()
+def list_report_definitions(
+    name_filter: str | None = None,
+    limit: int = 100,
+    target: str | None = None,
+) -> list[dict]:
+    """List available report definition templates in Aria Operations.
+
+    Args:
+        name_filter: Optional substring to filter by report name (case-insensitive).
+        limit: Maximum number of definitions to return (1–500). Default 100.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.reports import list_report_definitions as _list
+
+    return _list(_get_connection(target), name_filter=name_filter, limit=limit)
+
+
+@mcp.tool()
+def generate_report(
+    definition_id: str,
+    resource_ids: list[str] | None = None,
+    target: str | None = None,
+) -> dict:
+    """Trigger generation of a report from a report definition template.
+
+    Returns immediately with a report_id and PENDING status.
+    Poll get_report(report_id) until status == COMPLETED, then use download_url.
+
+    Args:
+        definition_id: Report definition (template) UUID from list_report_definitions.
+        resource_ids: Optional list of resource UUIDs to scope the report.
+            If omitted, the report runs against all resources in the template scope.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.reports import generate_report as _generate
+
+    return _generate(
+        _get_connection(target),
+        definition_id=definition_id,
+        resource_ids=resource_ids,
+        audit_logger=_audit,
+        target_name=_target_name(target),
+    )
+
+
+@mcp.tool()
+def list_reports(
+    definition_id: str | None = None,
+    limit: int = 50,
+    target: str | None = None,
+) -> list[dict]:
+    """List generated reports, optionally filtered by report definition.
+
+    Args:
+        definition_id: Optional report definition UUID to filter results.
+        limit: Maximum number of reports to return (1–200). Default 50.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.reports import list_reports as _list
+
+    return _list(_get_connection(target), definition_id=definition_id, limit=limit)
+
+
+@mcp.tool()
+def get_report(
+    report_id: str,
+    target: str | None = None,
+) -> dict:
+    """Get status and download URLs for a generated report.
+
+    Args:
+        report_id: The report UUID (from generate_report or list_reports).
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.reports import get_report as _get
+
+    return _get(_get_connection(target), report_id)
+
+
+@mcp.tool()
+def delete_report(
+    report_id: str,
+    target: str | None = None,
+) -> dict:
+    """Delete a generated report from Aria Operations.
+
+    Args:
+        report_id: The report UUID to delete.
+        target: Optional Aria Operations target name from config. Uses default if omitted.
+    """
+    from vmware_aria.ops.reports import delete_report as _delete
+
+    return _delete(
+        _get_connection(target),
+        report_id=report_id,
+        audit_logger=_audit,
+        target_name=_target_name(target),
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -292,3 +292,227 @@ def list_alert_definitions(
             }
         )
     return results
+
+
+# ---------------------------------------------------------------------------
+# create_alert_definition
+# ---------------------------------------------------------------------------
+
+_VALID_CRITICALITIES_DEF = {"INFORMATION", "WARNING", "IMMEDIATE", "CRITICAL"}
+
+
+def create_alert_definition(
+    client: AriaClient,
+    name: str,
+    description: str,
+    resource_kind: str,
+    symptom_definition_ids: list[str],
+    criticality: str = "WARNING",
+    adapter_kind: str = "VMWARE",
+    audit_logger: AuditLogger | None = None,
+    target_name: str = "default",
+) -> dict:
+    """Create a new alert definition referencing existing symptom definitions.
+
+    To find symptom_definition_ids, use list_symptom_definitions().
+
+    Args:
+        client: Authenticated Aria Operations API client.
+        name: Alert definition name (must be unique).
+        description: Human-readable description.
+        resource_kind: Resource kind this alert applies to, e.g. VirtualMachine,
+            HostSystem, ClusterComputeResource.
+        symptom_definition_ids: List of symptom definition UUIDs that trigger this alert.
+            ANY one symptom firing will trigger the alert.
+        criticality: Alert severity: INFORMATION, WARNING, IMMEDIATE, CRITICAL.
+        adapter_kind: Adapter kind key. Default VMWARE (vSphere adapter).
+        audit_logger: Optional audit logger.
+        target_name: Target name for audit log.
+
+    Returns:
+        Dict with new alert definition id, name, enabled.
+    """
+    if not name:
+        raise ValueError("name must not be empty")
+    if not symptom_definition_ids:
+        raise ValueError("symptom_definition_ids must not be empty")
+    criticality = criticality.upper()
+    if criticality not in _VALID_CRITICALITIES_DEF:
+        raise ValueError(f"criticality must be one of: {', '.join(sorted(_VALID_CRITICALITIES_DEF))}")
+
+    payload = {
+        "name": name,
+        "description": description,
+        "adapterKindKey": adapter_kind,
+        "resourceKindKey": resource_kind,
+        "states": [
+            {
+                "severity": criticality,
+                "base-symptom-set": {
+                    "type": "SYMPTOM_SET",
+                    "relation": "ANY",
+                    "symptomDefinitionIds": symptom_definition_ids,
+                },
+            }
+        ],
+    }
+
+    data = client.post("/alertdefinitions", json_data=payload)
+    result = {
+        "id": _sanitize(data.get("id", "")),
+        "name": _sanitize(data.get("name", ""), max_len=300),
+        "enabled": data.get("active", True),
+        "action": "created",
+    }
+
+    if audit_logger:
+        audit_logger.log(
+            target=target_name,
+            operation="create_alert_definition",
+            resource=f"alertdefinition/{result['id']}",
+            skill="aria",
+            parameters={"name": name, "criticality": criticality, "resource_kind": resource_kind},
+            result="ok",
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# set_alert_definition_state  (enable / disable)
+# ---------------------------------------------------------------------------
+
+
+def set_alert_definition_state(
+    client: AriaClient,
+    definition_id: str,
+    enabled: bool,
+    audit_logger: AuditLogger | None = None,
+    target_name: str = "default",
+) -> dict:
+    """Enable or disable an alert definition.
+
+    Args:
+        client: Authenticated Aria Operations API client.
+        definition_id: Alert definition UUID.
+        enabled: True to enable, False to disable.
+        audit_logger: Optional audit logger.
+        target_name: Target name for audit log.
+
+    Returns:
+        Dict with definition_id, enabled, action.
+    """
+    if not definition_id:
+        raise ValueError("definition_id must not be empty")
+
+    action_path = "enable" if enabled else "disable"
+    client.post(f"/alertdefinitions/{definition_id}/{action_path}")
+
+    result = {
+        "definition_id": definition_id,
+        "enabled": enabled,
+        "action": action_path,
+    }
+
+    if audit_logger:
+        audit_logger.log(
+            target=target_name,
+            operation="set_alert_definition_state",
+            resource=f"alertdefinition/{definition_id}",
+            skill="aria",
+            parameters={"definition_id": definition_id, "enabled": enabled},
+            result="ok",
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# delete_alert_definition
+# ---------------------------------------------------------------------------
+
+
+def delete_alert_definition(
+    client: AriaClient,
+    definition_id: str,
+    audit_logger: AuditLogger | None = None,
+    target_name: str = "default",
+) -> dict:
+    """Delete an alert definition permanently.
+
+    Args:
+        client: Authenticated Aria Operations API client.
+        definition_id: Alert definition UUID to delete.
+        audit_logger: Optional audit logger.
+        target_name: Target name for audit log.
+
+    Returns:
+        Dict confirming deletion.
+    """
+    if not definition_id:
+        raise ValueError("definition_id must not be empty")
+
+    client.delete(f"/alertdefinitions/{definition_id}")
+
+    result = {"definition_id": definition_id, "action": "deleted"}
+
+    if audit_logger:
+        audit_logger.log(
+            target=target_name,
+            operation="delete_alert_definition",
+            resource=f"alertdefinition/{definition_id}",
+            skill="aria",
+            parameters={"definition_id": definition_id},
+            result="ok",
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# list_symptom_definitions  (helper for create_alert_definition)
+# ---------------------------------------------------------------------------
+
+
+def list_symptom_definitions(
+    client: AriaClient,
+    name_filter: str | None = None,
+    resource_kind: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """List symptom definitions — use these IDs when creating alert definitions.
+
+    Args:
+        client: Authenticated Aria Operations API client.
+        name_filter: Optional substring filter on symptom name (case-insensitive).
+        resource_kind: Optional resource kind to filter (e.g. VirtualMachine).
+        limit: Maximum number of symptom definitions to return (1–500).
+
+    Returns:
+        List of symptom definition dicts with id, name, resource_kind, metric_key,
+        threshold_type, and criticality.
+    """
+    limit = max(1, min(limit, 500))
+    params: dict = {"pageSize": limit}
+    if resource_kind:
+        params["resourceKindKey"] = resource_kind
+
+    data = client.get("/symptomdefinitions", params=params)
+    items = data.get("symptomDefinitions", [])
+
+    results = []
+    for s in items:
+        name = _sanitize(s.get("name", ""), max_len=300)
+        if name_filter and name_filter.lower() not in name.lower():
+            continue
+        condition = s.get("state", {}).get("condition", {})
+        results.append({
+            "id": _sanitize(s.get("id", "")),
+            "name": name,
+            "resource_kind": _sanitize(s.get("resourceKindKey", "")),
+            "adapter_kind": _sanitize(s.get("adapterKindKey", "")),
+            "metric_key": _sanitize(condition.get("key", ""), max_len=200),
+            "threshold_type": _sanitize(condition.get("thresholdType", ""), max_len=100),
+            "criticality": _sanitize(s.get("state", {}).get("severity", ""), max_len=50),
+        })
+    return results

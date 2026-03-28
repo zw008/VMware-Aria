@@ -33,12 +33,14 @@ alert_app = typer.Typer(help="Alert management: list, get, acknowledge, cancel, 
 capacity_app = typer.Typer(help="Capacity planning: overview, remaining, time-remaining, rightsizing.")
 anomaly_app = typer.Typer(help="Anomaly detection: list anomalies, risk badge.")
 health_app = typer.Typer(help="Platform health: Aria node status, collector groups.")
+report_app = typer.Typer(help="Report management: list definitions, generate, list, get, delete.")
 
 app.add_typer(resource_app, name="resource")
 app.add_typer(alert_app, name="alert")
 app.add_typer(capacity_app, name="capacity")
 app.add_typer(anomaly_app, name="anomaly")
 app.add_typer(health_app, name="health")
+app.add_typer(report_app, name="report")
 
 # ─── Type aliases ────────────────────────────────────────────────────────────
 
@@ -477,3 +479,114 @@ def health_collectors(
             state_style = "green" if c["state"] == "RUNNING" else "red"
             table.add_row(c["name"], f"[{state_style}]{c['state']}[/{state_style}]", c["type"], c["host"])
         console.print(table)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REPORT commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@report_app.command("definitions")
+def report_definitions(
+    name_filter: Annotated[str | None, typer.Option("--name", help="Filter by name substring")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 50,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List available report definition templates."""
+    from vmware_aria.ops.reports import list_report_definitions
+
+    client, _ = _get_connection(target, config)
+    items = list_report_definitions(client, name_filter=name_filter, limit=limit)
+
+    table = Table(title="Report Definitions", show_lines=False)
+    table.add_column("Name", style="bold")
+    table.add_column("ID")
+    table.add_column("Subject Type")
+    table.add_column("Owner")
+
+    for d in items:
+        table.add_row(d["name"][:60], d["id"][:36], d["subject_type"], d["owner"])
+
+    console.print(table)
+
+
+@report_app.command("generate")
+def report_generate(
+    definition_id: str,
+    resource_ids: Annotated[str | None, typer.Option("--resources", help="Comma-separated resource UUIDs")] = None,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Trigger report generation from a definition template."""
+    from vmware_aria.ops.reports import generate_report
+
+    client, cfg = _get_connection(target, config)
+    target_name = target or cfg.default_target or "default"
+    rids = [r.strip() for r in resource_ids.split(",")] if resource_ids else None
+    result = generate_report(client, definition_id=definition_id, resource_ids=rids, audit_logger=_audit, target_name=target_name)
+    console.print(f"Report queued: [bold]{result['report_id']}[/bold] (status: {result['status']})")
+    console.print("Poll with: vmware-aria report get <report_id>")
+
+
+@report_app.command("list")
+def report_list(
+    definition_id: Annotated[str | None, typer.Option("--definition-id", help="Filter by definition UUID")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """List generated reports."""
+    from vmware_aria.ops.reports import list_reports
+
+    client, _ = _get_connection(target, config)
+    items = list_reports(client, definition_id=definition_id, limit=limit)
+
+    table = Table(title="Generated Reports", show_lines=False)
+    table.add_column("ID")
+    table.add_column("Name", style="bold")
+    table.add_column("Status")
+    table.add_column("Owner")
+
+    for r in items:
+        status_style = "green" if r["status"] == "COMPLETED" else "yellow" if r["status"] == "RUNNING" else "white"
+        table.add_row(r["id"][:36], r["name"][:50], f"[{status_style}]{r['status']}[/{status_style}]", r["owner"])
+
+    console.print(table)
+
+
+@report_app.command("get")
+def report_get(
+    report_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Get status and download URL for a generated report."""
+    from vmware_aria.ops.reports import get_report
+
+    client, _ = _get_connection(target, config)
+    data = get_report(client, report_id)
+    status_style = "green" if data["status"] == "COMPLETED" else "yellow"
+    console.print(f"Report [bold]{data['id']}[/bold]: [{status_style}]{data['status']}[/{status_style}]")
+    if data["status"] == "COMPLETED":
+        console.print(f"PDF: {data['download_url']}")
+        console.print(f"CSV: {data['csv_url']}")
+
+
+@report_app.command("delete")
+def report_delete(
+    report_id: str,
+    target: TargetOption = None,
+    config: ConfigOption = None,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
+) -> None:
+    """Delete a generated report."""
+    from vmware_aria.ops.reports import delete_report
+
+    if not yes:
+        typer.confirm(f"Delete report {report_id}?", abort=True)
+
+    client, cfg = _get_connection(target, config)
+    target_name = target or cfg.default_target or "default"
+    result = delete_report(client, report_id=report_id, audit_logger=_audit, target_name=target_name)
+    console.print(f"[green]Deleted report {result['report_id']}[/green]")
