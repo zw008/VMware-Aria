@@ -1,20 +1,19 @@
 """Aria Operations resource queries: list, get details, metrics, health, top consumers.
 
-All API responses pass through _sanitize() to strip control characters and limit length.
+All API responses pass through sanitize() to strip control characters and limit length.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
+
+from vmware_policy import sanitize
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
 
 _log = logging.getLogger("vmware-aria.ops.resources")
-
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 # Valid resource kinds recognised by Aria Operations
 _VALID_RESOURCE_KINDS = {
@@ -36,12 +35,6 @@ _VALID_SORT_METRICS = {
     "net|usage_average",
 }
 
-
-def _sanitize(text: str, max_len: int = 500) -> str:
-    """Strip control characters and truncate to max_len."""
-    if not text:
-        return text
-    return _CONTROL_CHAR_RE.sub("", text[:max_len])
 
 
 # ---------------------------------------------------------------------------
@@ -76,18 +69,18 @@ def list_resources(
     items = data.get("resourceList", [])
     results = []
     for r in items:
-        name = _sanitize(r.get("resourceKey", {}).get("name", ""))
+        name = sanitize(r.get("resourceKey", {}).get("name", ""))
         if name_filter and name_filter.lower() not in name.lower():
             continue
         results.append(
             {
-                "id": _sanitize(r.get("identifier", "")),
+                "id": sanitize(r.get("identifier", "")),
                 "name": name,
-                "kind": _sanitize(r.get("resourceKey", {}).get("resourceKindKey", "")),
-                "adapter_kind": _sanitize(r.get("resourceKey", {}).get("adapterKindKey", "")),
-                "health_color": _sanitize(r.get("badge", {}).get("health", {}).get("color", "")),
+                "kind": sanitize(r.get("resourceKey", {}).get("resourceKindKey", "")),
+                "adapter_kind": sanitize(r.get("resourceKey", {}).get("adapterKindKey", "")),
+                "health_color": sanitize(r.get("badge", {}).get("health", {}).get("color", "")),
                 "health_score": r.get("badge", {}).get("health", {}).get("score", None),
-                "status": _sanitize(r.get("resourceStatusStates", [{}])[0].get("resourceState", "")),
+                "status": sanitize(r.get("resourceStatusStates", [{}])[0].get("resourceState", "")),
             }
         )
     return results
@@ -115,25 +108,25 @@ def get_resource(client: AriaClient, resource_id: str) -> dict:
     key = data.get("resourceKey", {})
     badge = data.get("badge", {})
     return {
-        "id": _sanitize(data.get("identifier", "")),
-        "name": _sanitize(key.get("name", "")),
-        "kind": _sanitize(key.get("resourceKindKey", "")),
-        "adapter_kind": _sanitize(key.get("adapterKindKey", "")),
-        "description": _sanitize(data.get("description", ""), max_len=1000),
-        "health_color": _sanitize(badge.get("health", {}).get("color", "")),
+        "id": sanitize(data.get("identifier", "")),
+        "name": sanitize(key.get("name", "")),
+        "kind": sanitize(key.get("resourceKindKey", "")),
+        "adapter_kind": sanitize(key.get("adapterKindKey", "")),
+        "description": sanitize(data.get("description", ""), max_len=1000),
+        "health_color": sanitize(badge.get("health", {}).get("color", "")),
         "health_score": badge.get("health", {}).get("score", None),
-        "risk_color": _sanitize(badge.get("risk", {}).get("color", "")),
+        "risk_color": sanitize(badge.get("risk", {}).get("color", "")),
         "risk_score": badge.get("risk", {}).get("score", None),
-        "efficiency_color": _sanitize(badge.get("efficiency", {}).get("color", "")),
+        "efficiency_color": sanitize(badge.get("efficiency", {}).get("color", "")),
         "efficiency_score": badge.get("efficiency", {}).get("score", None),
         "identifiers": {
-            _sanitize(ident.get("identifierType", {}).get("name", "")): _sanitize(ident.get("value", ""))
+            sanitize(ident.get("identifierType", {}).get("name", "")): sanitize(ident.get("value", ""))
             for ident in data.get("resourceKey", {}).get("resourceIdentifiers", [])
         },
         "status_states": [
             {
-                "state": _sanitize(s.get("resourceState", "")),
-                "status": _sanitize(s.get("resourceStatus", "")),
+                "state": sanitize(s.get("resourceState", "")),
+                "status": sanitize(s.get("resourceStatus", "")),
             }
             for s in data.get("resourceStatusStates", [])
         ],
@@ -196,7 +189,7 @@ def get_resource_metrics(
 
     result: dict[str, list[dict]] = {}
     for stat_list in data.get("values", []):
-        key = _sanitize(stat_list.get("statKey", {}).get("key", ""))
+        key = sanitize(stat_list.get("statKey", {}).get("key", ""))
         timestamps = stat_list.get("timestamps", [])
         values = stat_list.get("data", [])
         result[key] = [
@@ -228,9 +221,9 @@ def get_resource_health(client: AriaClient, resource_id: str) -> dict:
     return {
         "resource_id": resource_id,
         "health_score": data.get("score", None),
-        "health_color": _sanitize(data.get("color", "")),
-        "health_description": _sanitize(data.get("description", ""), max_len=500),
-        "health_degraded_by": _sanitize(data.get("degradedBy", ""), max_len=500),
+        "health_color": sanitize(data.get("color", "")),
+        "health_description": sanitize(data.get("description", ""), max_len=500),
+        "health_degraded_by": sanitize(data.get("degradedBy", ""), max_len=500),
     }
 
 
@@ -273,11 +266,11 @@ def get_top_consumers(
     for item in data.get("resourceList", []):
         results.append(
             {
-                "id": _sanitize(item.get("identifier", "")),
-                "name": _sanitize(item.get("resourceKey", {}).get("name", "")),
+                "id": sanitize(item.get("identifier", "")),
+                "name": sanitize(item.get("resourceKey", {}).get("name", "")),
                 "metric_key": metric_key,
                 "value": item.get("dtValue", None),
-                "unit": _sanitize(item.get("unit", "")),
+                "unit": sanitize(item.get("unit", "")),
             }
         )
     return results

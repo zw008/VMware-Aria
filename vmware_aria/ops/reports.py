@@ -6,28 +6,21 @@ Reports are generated from report definition templates.  Typical workflow:
   3. get_report(report_id) — poll until status == COMPLETED, then use download_url
   4. delete_report(report_id) — clean up after download
 
-All API responses pass through _sanitize() to strip control characters.
+All API responses pass through sanitize() to strip control characters.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
+
+from vmware_policy import sanitize
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
     from vmware_aria.notify.audit import AuditLogger
 
 _log = logging.getLogger("vmware-aria.ops.reports")
-
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-
-
-def _sanitize(text: str, max_len: int = 500) -> str:
-    if not text:
-        return text
-    return _CONTROL_CHAR_RE.sub("", str(text)[:max_len])
 
 
 # ---------------------------------------------------------------------------
@@ -56,15 +49,15 @@ def list_report_definitions(
 
     results = []
     for d in items:
-        name = _sanitize(d.get("name", ""), max_len=300)
+        name = sanitize(d.get("name", ""), max_len=300)
         if name_filter and name_filter.lower() not in name.lower():
             continue
         results.append({
-            "id": _sanitize(d.get("id", "")),
+            "id": sanitize(d.get("id", "")),
             "name": name,
-            "description": _sanitize(d.get("description", ""), max_len=500),
-            "subject_type": _sanitize(d.get("subject", {}).get("resourceKindKey", ""), max_len=200),
-            "owner": _sanitize(d.get("owner", ""), max_len=200),
+            "description": sanitize(d.get("description", ""), max_len=500),
+            "subject_type": sanitize(d.get("subject", {}).get("resourceKindKey", ""), max_len=200),
+            "owner": sanitize(d.get("owner", ""), max_len=200),
         })
     return results
 
@@ -102,12 +95,12 @@ def generate_report(
         payload["subject"] = {"resources": [{"resourceId": rid} for rid in resource_ids]}
 
     data = client.post("/reports", json_data=payload)
-    report_id = _sanitize(data.get("id", ""))
+    report_id = sanitize(data.get("id", ""))
 
     result = {
         "report_id": report_id,
         "definition_id": definition_id,
-        "status": _sanitize(data.get("status", "PENDING")),
+        "status": sanitize(data.get("status", "PENDING")),
         "note": "Poll get_report(report_id) until status == COMPLETED, then use download_url.",
     }
 
@@ -154,13 +147,13 @@ def list_reports(
 
     return [
         {
-            "id": _sanitize(r.get("id", "")),
-            "name": _sanitize(r.get("name", ""), max_len=300),
-            "status": _sanitize(r.get("status", "")),
-            "definition_id": _sanitize(r.get("reportDefinitionId", "")),
+            "id": sanitize(r.get("id", "")),
+            "name": sanitize(r.get("name", ""), max_len=300),
+            "status": sanitize(r.get("status", "")),
+            "definition_id": sanitize(r.get("reportDefinitionId", "")),
             "generation_time_ms": r.get("generationTime"),
             "finish_time_ms": r.get("finishTime"),
-            "owner": _sanitize(r.get("owner", ""), max_len=200),
+            "owner": sanitize(r.get("owner", ""), max_len=200),
         }
         for r in items
     ]
@@ -195,10 +188,10 @@ def get_report(
     csv_url = f"{base_url}/reports/{report_id}/download?format=csv"
 
     return {
-        "id": _sanitize(data.get("id", "")),
-        "name": _sanitize(data.get("name", ""), max_len=300),
-        "status": _sanitize(data.get("status", "")),
-        "definition_id": _sanitize(data.get("reportDefinitionId", "")),
+        "id": sanitize(data.get("id", "")),
+        "name": sanitize(data.get("name", ""), max_len=300),
+        "status": sanitize(data.get("status", "")),
+        "definition_id": sanitize(data.get("reportDefinitionId", "")),
         "generation_time_ms": data.get("generationTime"),
         "finish_time_ms": data.get("finishTime"),
         "download_url": download_url,

@@ -1,14 +1,15 @@
 """Aria Operations alert management: list, get, acknowledge, cancel, list definitions.
 
 Write operations (acknowledge, cancel) are audit-logged.
-All API responses pass through _sanitize() to strip control characters.
+All API responses pass through sanitize() to strip control characters.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
+
+from vmware_policy import sanitize
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
@@ -16,16 +17,7 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger("vmware-aria.ops.alerts")
 
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-
 _VALID_CRITICALITIES = {"INFORMATION", "WARNING", "IMMEDIATE", "CRITICAL"}
-
-
-def _sanitize(text: str, max_len: int = 500) -> str:
-    """Strip control characters and truncate to max_len."""
-    if not text:
-        return text
-    return _CONTROL_CHAR_RE.sub("", text[:max_len])
 
 
 # ---------------------------------------------------------------------------
@@ -72,18 +64,18 @@ def list_alerts(
 
     return [
         {
-            "id": _sanitize(a.get("alertId", "")),
-            "name": _sanitize(a.get("alertName", ""), max_len=300),
-            "criticality": _sanitize(a.get("criticality", "")),
-            "status": _sanitize(a.get("status", "")),
-            "alert_impact": _sanitize(a.get("alertImpact", "")),
-            "resource_id": _sanitize(a.get("resourceId", "")),
-            "resource_name": _sanitize(a.get("resourceName", ""), max_len=300),
+            "id": sanitize(a.get("alertId", "")),
+            "name": sanitize(a.get("alertName", ""), max_len=300),
+            "criticality": sanitize(a.get("criticality", "")),
+            "status": sanitize(a.get("status", "")),
+            "alert_impact": sanitize(a.get("alertImpact", "")),
+            "resource_id": sanitize(a.get("resourceId", "")),
+            "resource_name": sanitize(a.get("resourceName", ""), max_len=300),
             "start_time_ms": a.get("startTimeUTC", None),
             "update_time_ms": a.get("updateTimeUTC", None),
-            "alert_definition_id": _sanitize(a.get("alertDefinitionId", "")),
-            "control_state": _sanitize(a.get("controlState", "")),
-            "info": _sanitize(a.get("info", ""), max_len=500),
+            "alert_definition_id": sanitize(a.get("alertDefinitionId", "")),
+            "control_state": sanitize(a.get("controlState", "")),
+            "info": sanitize(a.get("info", ""), max_len=500),
         }
         for a in items
     ]
@@ -109,31 +101,31 @@ def get_alert(client: AriaClient, alert_id: str) -> dict:
 
     data = client.get(f"/alerts/{alert_id}")
     return {
-        "id": _sanitize(data.get("alertId", "")),
-        "name": _sanitize(data.get("alertName", ""), max_len=300),
-        "criticality": _sanitize(data.get("criticality", "")),
-        "status": _sanitize(data.get("status", "")),
-        "alert_impact": _sanitize(data.get("alertImpact", "")),
-        "resource_id": _sanitize(data.get("resourceId", "")),
-        "resource_name": _sanitize(data.get("resourceName", ""), max_len=300),
+        "id": sanitize(data.get("alertId", "")),
+        "name": sanitize(data.get("alertName", ""), max_len=300),
+        "criticality": sanitize(data.get("criticality", "")),
+        "status": sanitize(data.get("status", "")),
+        "alert_impact": sanitize(data.get("alertImpact", "")),
+        "resource_id": sanitize(data.get("resourceId", "")),
+        "resource_name": sanitize(data.get("resourceName", ""), max_len=300),
         "start_time_ms": data.get("startTimeUTC", None),
         "update_time_ms": data.get("updateTimeUTC", None),
         "cancel_time_ms": data.get("cancelTimeUTC", None),
-        "info": _sanitize(data.get("info", ""), max_len=500),
-        "control_state": _sanitize(data.get("controlState", "")),
-        "alert_definition_id": _sanitize(data.get("alertDefinitionId", "")),
-        "alert_definition_name": _sanitize(data.get("alertDefinitionName", ""), max_len=300),
+        "info": sanitize(data.get("info", ""), max_len=500),
+        "control_state": sanitize(data.get("controlState", "")),
+        "alert_definition_id": sanitize(data.get("alertDefinitionId", "")),
+        "alert_definition_name": sanitize(data.get("alertDefinitionName", ""), max_len=300),
         "symptoms": [
             {
-                "id": _sanitize(s.get("symptomId", "")),
-                "name": _sanitize(s.get("symptomName", ""), max_len=300),
-                "state": _sanitize(s.get("state", "")),
-                "severity": _sanitize(s.get("severity", "")),
+                "id": sanitize(s.get("symptomId", "")),
+                "name": sanitize(s.get("symptomName", ""), max_len=300),
+                "state": sanitize(s.get("state", "")),
+                "severity": sanitize(s.get("severity", "")),
             }
             for s in data.get("alertSymptomList", [])
         ],
         "recommendations": [
-            _sanitize(r.get("recommendationText", ""), max_len=1000)
+            sanitize(r.get("recommendationText", ""), max_len=1000)
             for r in data.get("alertRecommendationList", [])
         ],
     }
@@ -274,20 +266,20 @@ def list_alert_definitions(
 
     results = []
     for d in items:
-        name = _sanitize(d.get("name", ""), max_len=300)
+        name = sanitize(d.get("name", ""), max_len=300)
         if name_filter and name_filter.lower() not in name.lower():
             continue
         results.append(
             {
-                "id": _sanitize(d.get("id", "")),
+                "id": sanitize(d.get("id", "")),
                 "name": name,
-                "description": _sanitize(d.get("description", ""), max_len=500),
-                "adapter_kind": _sanitize(d.get("adapterKindKey", "")),
-                "resource_kind": _sanitize(d.get("resourceKindKey", "")),
-                "criticality": _sanitize(d.get("criticality", "")),
-                "impact": _sanitize(d.get("impact", {}).get("impactType", "")),
-                "type": _sanitize(d.get("type", "")),
-                "sub_type": _sanitize(d.get("subType", "")),
+                "description": sanitize(d.get("description", ""), max_len=500),
+                "adapter_kind": sanitize(d.get("adapterKindKey", "")),
+                "resource_kind": sanitize(d.get("resourceKindKey", "")),
+                "criticality": sanitize(d.get("criticality", "")),
+                "impact": sanitize(d.get("impact", {}).get("impactType", "")),
+                "type": sanitize(d.get("type", "")),
+                "sub_type": sanitize(d.get("subType", "")),
                 "enabled": d.get("active", True),
             }
         )
@@ -359,8 +351,8 @@ def create_alert_definition(
 
     data = client.post("/alertdefinitions", json_data=payload)
     result = {
-        "id": _sanitize(data.get("id", "")),
-        "name": _sanitize(data.get("name", ""), max_len=300),
+        "id": sanitize(data.get("id", "")),
+        "name": sanitize(data.get("name", ""), max_len=300),
         "enabled": data.get("active", True),
         "action": "created",
     }
@@ -502,17 +494,17 @@ def list_symptom_definitions(
 
     results = []
     for s in items:
-        name = _sanitize(s.get("name", ""), max_len=300)
+        name = sanitize(s.get("name", ""), max_len=300)
         if name_filter and name_filter.lower() not in name.lower():
             continue
         condition = s.get("state", {}).get("condition", {})
         results.append({
-            "id": _sanitize(s.get("id", "")),
+            "id": sanitize(s.get("id", "")),
             "name": name,
-            "resource_kind": _sanitize(s.get("resourceKindKey", "")),
-            "adapter_kind": _sanitize(s.get("adapterKindKey", "")),
-            "metric_key": _sanitize(condition.get("key", ""), max_len=200),
-            "threshold_type": _sanitize(condition.get("thresholdType", ""), max_len=100),
-            "criticality": _sanitize(s.get("state", {}).get("severity", ""), max_len=50),
+            "resource_kind": sanitize(s.get("resourceKindKey", "")),
+            "adapter_kind": sanitize(s.get("adapterKindKey", "")),
+            "metric_key": sanitize(condition.get("key", ""), max_len=200),
+            "threshold_type": sanitize(condition.get("thresholdType", ""), max_len=100),
+            "criticality": sanitize(s.get("state", {}).get("severity", ""), max_len=50),
         })
     return results

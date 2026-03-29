@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from vmware_policy import vmware_tool
 
 from vmware_aria.config import load_config
 from vmware_aria.connection import ConnectionManager
@@ -98,6 +99,7 @@ def _target_name(target: str | None) -> str:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_resources(
     resource_kind: str = "VirtualMachine",
     limit: int = 100,
@@ -119,6 +121,7 @@ def list_resources(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_resource(resource_id: str, target: str | None = None) -> dict:
     """Get full details for a specific resource including health, risk, and efficiency badges.
 
@@ -132,6 +135,7 @@ def get_resource(resource_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_resource_metrics(
     resource_id: str,
     metric_keys: list[str],
@@ -161,6 +165,7 @@ def get_resource_metrics(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_resource_health(resource_id: str, target: str | None = None) -> dict:
     """Get the health badge score for a resource (0–100, higher is healthier).
 
@@ -174,6 +179,7 @@ def get_resource_health(resource_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_top_consumers(
     metric_key: str = "cpu|usage_average",
     resource_kind: str = "VirtualMachine",
@@ -200,6 +206,7 @@ def get_top_consumers(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_alerts(
     active_only: bool = True,
     criticality: str | None = None,
@@ -222,6 +229,7 @@ def list_alerts(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_alert(alert_id: str, target: str | None = None) -> dict:
     """Get full details for a specific alert including symptoms and recommendations.
 
@@ -235,6 +243,7 @@ def get_alert(alert_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
     """Acknowledge an active alert (marks it as seen, does not cancel it).
 
@@ -251,6 +260,7 @@ def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def cancel_alert(alert_id: str, target: str | None = None) -> dict:
     """Cancel (dismiss) an active alert. This WRITE operation permanently closes the alert.
 
@@ -267,6 +277,7 @@ def cancel_alert(alert_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_alert_definitions(
     name_filter: str | None = None,
     limit: int = 100,
@@ -290,6 +301,7 @@ def list_alert_definitions(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
     """Get capacity recommendations and utilization overview for a cluster.
 
@@ -303,6 +315,7 @@ def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
     """Get remaining capacity for a cluster or host — how much more workload can be added.
 
@@ -318,6 +331,7 @@ def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
     """Predict when a cluster will exhaust its capacity based on usage trends.
 
@@ -333,6 +347,7 @@ def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_rightsizing_recommendations(
     resource_id: str | None = None,
     limit: int = 50,
@@ -359,6 +374,7 @@ def list_rightsizing_recommendations(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_anomalies(
     resource_id: str | None = None,
     limit: int = 50,
@@ -379,6 +395,7 @@ def list_anomalies(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
     """Get the risk badge score for a resource (0–100, higher = more risk of future problems).
 
@@ -400,6 +417,7 @@ def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_aria_health(target: str | None = None) -> dict:
     """Check Aria Operations platform health: all internal services and node status.
 
@@ -416,6 +434,7 @@ def get_aria_health(target: str | None = None) -> dict:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_collector_groups(target: str | None = None) -> list[dict]:
     """List Aria Operations collector groups and their member collector status.
 
@@ -436,6 +455,7 @@ def list_collector_groups(target: str | None = None) -> list[dict]:
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_symptom_definitions(
     name_filter: str | None = None,
     resource_kind: str | None = None,
@@ -456,6 +476,7 @@ def list_symptom_definitions(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def create_alert_definition(
     name: str,
     description: str,
@@ -496,6 +517,7 @@ def create_alert_definition(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def set_alert_definition_state(
     definition_id: str,
     enabled: bool,
@@ -520,6 +542,7 @@ def set_alert_definition_state(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def delete_alert_definition(
     definition_id: str,
     target: str | None = None,
@@ -549,6 +572,7 @@ def delete_alert_definition(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_report_definitions(
     name_filter: str | None = None,
     limit: int = 100,
@@ -567,6 +591,7 @@ def list_report_definitions(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def generate_report(
     definition_id: str,
     resource_ids: list[str] | None = None,
@@ -595,6 +620,7 @@ def generate_report(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def list_reports(
     definition_id: str | None = None,
     limit: int = 50,
@@ -613,6 +639,7 @@ def list_reports(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="low")
 def get_report(
     report_id: str,
     target: str | None = None,
@@ -629,6 +656,7 @@ def get_report(
 
 
 @mcp.tool()
+@vmware_tool(risk_level="medium")
 def delete_report(
     report_id: str,
     target: str | None = None,

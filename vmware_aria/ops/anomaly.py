@@ -1,27 +1,19 @@
 """Aria Operations anomaly detection: list anomalies and get risk badge scores.
 
-All API responses pass through _sanitize() to strip control characters and limit length.
+All API responses pass through sanitize() to strip control characters and limit length.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
+
+from vmware_policy import sanitize
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
 
 _log = logging.getLogger("vmware-aria.ops.anomaly")
-
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-
-
-def _sanitize(text: str, max_len: int = 500) -> str:
-    """Strip control characters and truncate to max_len."""
-    if not text:
-        return text
-    return _CONTROL_CHAR_RE.sub("", text[:max_len])
 
 
 # ---------------------------------------------------------------------------
@@ -60,18 +52,18 @@ def list_anomalies(
 
     return [
         {
-            "id": _sanitize(a.get("anomalyId", "")),
-            "resource_id": _sanitize(a.get("resourceId", "")),
-            "resource_name": _sanitize(a.get("resourceName", ""), max_len=300),
-            "metric_key": _sanitize(a.get("metricKey", "")),
-            "anomaly_type": _sanitize(a.get("anomalyType", "")),
+            "id": sanitize(a.get("anomalyId", "")),
+            "resource_id": sanitize(a.get("resourceId", "")),
+            "resource_name": sanitize(a.get("resourceName", ""), max_len=300),
+            "metric_key": sanitize(a.get("metricKey", "")),
+            "anomaly_type": sanitize(a.get("anomalyType", "")),
             "start_time_ms": a.get("startTimeUTC", None),
             "end_time_ms": a.get("endTimeUTC", None),
             "observed_value": a.get("observedValue", None),
             "expected_value": a.get("expectedValue", None),
             "deviation": a.get("deviation", None),
-            "severity": _sanitize(a.get("severity", "")),
-            "description": _sanitize(a.get("description", ""), max_len=500),
+            "severity": sanitize(a.get("severity", "")),
+            "description": sanitize(a.get("description", ""), max_len=500),
         }
         for a in items
     ]
@@ -102,12 +94,12 @@ def get_resource_riskbadge(client: AriaClient, resource_id: str) -> dict:
     return {
         "resource_id": resource_id,
         "risk_score": data.get("score", None),
-        "risk_color": _sanitize(data.get("color", "")),
-        "risk_description": _sanitize(data.get("description", ""), max_len=500),
+        "risk_color": sanitize(data.get("color", "")),
+        "risk_description": sanitize(data.get("description", ""), max_len=500),
         "contributing_causes": [
             {
-                "metric": _sanitize(c.get("metric", "")),
-                "cause": _sanitize(c.get("cause", ""), max_len=300),
+                "metric": sanitize(c.get("metric", "")),
+                "cause": sanitize(c.get("cause", ""), max_len=300),
                 "score": c.get("score", None),
             }
             for c in data.get("causes", [])

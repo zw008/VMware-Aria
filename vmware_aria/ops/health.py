@@ -1,27 +1,19 @@
 """Aria Operations platform health: node status and collector group status.
 
-All API responses pass through _sanitize() to strip control characters and limit length.
+All API responses pass through sanitize() to strip control characters and limit length.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
+
+from vmware_policy import sanitize
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
 
 _log = logging.getLogger("vmware-aria.ops.health")
-
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-
-
-def _sanitize(text: str, max_len: int = 500) -> str:
-    """Strip control characters and truncate to max_len."""
-    if not text:
-        return text
-    return _CONTROL_CHAR_RE.sub("", text[:max_len])
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +38,10 @@ def get_aria_health(client: AriaClient) -> dict:
     services = data.get("services", [])
     service_statuses = [
         {
-            "name": _sanitize(s.get("name", "")),
-            "status": _sanitize(s.get("status", {}).get("state", "")),
-            "health": _sanitize(s.get("status", {}).get("health", "")),
-            "message": _sanitize(s.get("status", {}).get("statusMessage", ""), max_len=300),
+            "name": sanitize(s.get("name", "")),
+            "status": sanitize(s.get("status", {}).get("state", "")),
+            "health": sanitize(s.get("status", {}).get("health", "")),
+            "message": sanitize(s.get("status", {}).get("statusMessage", ""), max_len=300),
         }
         for s in services
     ]
@@ -57,9 +49,9 @@ def get_aria_health(client: AriaClient) -> dict:
     unhealthy = [s for s in service_statuses if s["status"] != "RUNNING"]
 
     return {
-        "node_type": _sanitize(data.get("nodeType", "")),
-        "node_address": _sanitize(data.get("nodeAddress", "")),
-        "overall_status": _sanitize(data.get("clusterStatus", {}).get("clusterVipAddress", "")),
+        "node_type": sanitize(data.get("nodeType", "")),
+        "node_address": sanitize(data.get("nodeAddress", "")),
+        "overall_status": sanitize(data.get("clusterStatus", {}).get("clusterVipAddress", "")),
         "service_count": len(services),
         "unhealthy_services": unhealthy,
         "all_services_healthy": len(unhealthy) == 0,
@@ -89,17 +81,17 @@ def list_collector_groups(client: AriaClient) -> list[dict]:
 
     return [
         {
-            "id": _sanitize(g.get("id", "")),
-            "name": _sanitize(g.get("name", "")),
-            "description": _sanitize(g.get("description", ""), max_len=300),
+            "id": sanitize(g.get("id", "")),
+            "name": sanitize(g.get("name", "")),
+            "description": sanitize(g.get("description", ""), max_len=300),
             "collector_count": len(g.get("collectors", [])),
             "collectors": [
                 {
-                    "id": _sanitize(c.get("id", "")),
-                    "name": _sanitize(c.get("name", "")),
-                    "state": _sanitize(c.get("state", "")),
-                    "type": _sanitize(c.get("collectorType", "")),
-                    "host": _sanitize(c.get("hostname", "")),
+                    "id": sanitize(c.get("id", "")),
+                    "name": sanitize(c.get("name", "")),
+                    "state": sanitize(c.get("state", "")),
+                    "type": sanitize(c.get("collectorType", "")),
+                    "host": sanitize(c.get("hostname", "")),
                 }
                 for c in g.get("collectors", [])
             ],

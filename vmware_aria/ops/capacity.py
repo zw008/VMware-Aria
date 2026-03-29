@@ -1,27 +1,19 @@
 """Aria Operations capacity planning: overview, remaining capacity, time remaining, rightsizing.
 
-All API responses pass through _sanitize() to strip control characters and limit length.
+All API responses pass through sanitize() to strip control characters and limit length.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
+
+from vmware_policy import sanitize
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
 
 _log = logging.getLogger("vmware-aria.ops.capacity")
-
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-
-
-def _sanitize(text: str, max_len: int = 500) -> str:
-    """Strip control characters and truncate to max_len."""
-    if not text:
-        return text
-    return _CONTROL_CHAR_RE.sub("", text[:max_len])
 
 
 # ---------------------------------------------------------------------------
@@ -49,11 +41,11 @@ def get_capacity_overview(client: AriaClient, cluster_id: str) -> dict:
         "recommendation_count": len(recs),
         "recommendations": [
             {
-                "id": _sanitize(r.get("recommendationId", "")),
-                "type": _sanitize(r.get("type", "")),
-                "description": _sanitize(r.get("description", ""), max_len=1000),
-                "impact": _sanitize(r.get("impact", "")),
-                "reasoning": _sanitize(r.get("reasoning", ""), max_len=1000),
+                "id": sanitize(r.get("recommendationId", "")),
+                "type": sanitize(r.get("type", "")),
+                "description": sanitize(r.get("description", ""), max_len=1000),
+                "impact": sanitize(r.get("impact", "")),
+                "reasoning": sanitize(r.get("reasoning", ""), max_len=1000),
             }
             for r in recs
         ],
@@ -87,9 +79,9 @@ def get_remaining_capacity(client: AriaClient, resource_id: str) -> dict:
         "resource_id": resource_id,
         "remaining_capacity": [
             {
-                "metric": _sanitize(c.get("metric", "")),
+                "metric": sanitize(c.get("metric", "")),
                 "remaining_value": c.get("remainingValue", None),
-                "unit": _sanitize(c.get("unit", "")),
+                "unit": sanitize(c.get("unit", "")),
                 "usable_capacity": c.get("usableCapacity", None),
                 "used_capacity": c.get("usedCapacity", None),
                 "demand": c.get("demandValue", None),
@@ -126,7 +118,7 @@ def get_time_remaining(client: AriaClient, resource_id: str) -> dict:
         "resource_id": resource_id,
         "time_remaining": [
             {
-                "metric": _sanitize(p.get("metric", "")),
+                "metric": sanitize(p.get("metric", "")),
                 "time_remaining_days": p.get("timeRemainingInDays", None),
                 "confidence": p.get("confidence", None),
                 "projected_full_date_ms": p.get("projectedFullDate", None),
@@ -167,11 +159,11 @@ def list_rightsizing_recommendations(
 
     return [
         {
-            "id": _sanitize(r.get("id", "")),
-            "resource_id": _sanitize(r.get("resourceId", "")),
-            "resource_name": _sanitize(r.get("resourceName", ""), max_len=300),
-            "recommendation_type": _sanitize(r.get("type", "")),
-            "description": _sanitize(r.get("description", ""), max_len=500),
+            "id": sanitize(r.get("id", "")),
+            "resource_id": sanitize(r.get("resourceId", "")),
+            "resource_name": sanitize(r.get("resourceName", ""), max_len=300),
+            "recommendation_type": sanitize(r.get("type", "")),
+            "description": sanitize(r.get("description", ""), max_len=500),
             "current_cpu_count": r.get("currentCpuCount", None),
             "recommended_cpu_count": r.get("recommendedCpuCount", None),
             "current_memory_mb": r.get("currentMemoryMB", None),

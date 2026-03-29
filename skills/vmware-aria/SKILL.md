@@ -24,6 +24,7 @@ VMware Aria Operations (vRealize Operations) AI-assisted monitoring — 27 MCP t
 
 > Domain-focused monitoring skill for Aria Operations 8.x / vRealize Operations 8.x.
 > **Companion skills**: [vmware-nsx](https://github.com/zw008/VMware-NSX) (networking), [vmware-aiops](https://github.com/zw008/VMware-AIops) (VM lifecycle), [vmware-monitor](https://github.com/zw008/VMware-Monitor) (read-only vSphere).
+> | [vmware-pilot](../vmware-pilot/SKILL.md) (workflow orchestration) | [vmware-policy](../vmware-policy/SKILL.md) (audit/policy)
 
 ## What This Skill Does
 
@@ -86,6 +87,8 @@ vmware-aria doctor
 | NSX networking: segments, gateways, NAT, routing | **vmware-nsx** |
 | Read-only vSphere inventory, events, alarms | **vmware-monitor** |
 | Storage: iSCSI, vSAN, datastores | **vmware-storage** |
+| Multi-step workflows with approval | **vmware-pilot** |
+| Audit log query | **vmware-policy** (`vmware-audit` CLI) |
 
 ## Common Workflows
 
@@ -292,6 +295,8 @@ chmod 600 ~/.vmware-aria/.env
 
 vmware-aria doctor
 ```
+
+> All tools are automatically audited via vmware-policy. Audit logs: `vmware-audit log --last 20`
 
 > Full setup guide with multi-target config, MCP server setup, and Docker: see `references/setup-guide.md`
 
