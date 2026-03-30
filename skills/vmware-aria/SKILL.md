@@ -1,21 +1,19 @@
 ---
 name: vmware-aria
 description: >
-  VMware Aria Operations (vRealize Operations) monitoring, capacity planning, and alert management.
-  Query VM/host/cluster metrics, manage alerts and alert definitions, check capacity, detect anomalies,
-  automate reports, and track performance KPIs.
-  Use when user asks to "check VM performance", "list alerts", "acknowledge alarm",
-  "check capacity", "find top CPU consumers", "get rightsizing recommendations",
-  "detect anomalies", "check Aria health", "generate capacity report", "create alert definition",
-  "check CPU ready", "check memory balloon", "check SLA compliance",
-  or mentions Aria Operations/vROps/vRealize Operations.
-  For VM lifecycle operations use vmware-aiops, for NSX networking use vmware-nsx.
+  Use this skill whenever the user needs VMware Aria Operations data — performance metrics, alerts, capacity planning, anomaly detection, and automated reports.
+  Directly handles: query resource metrics, list/acknowledge/cancel alerts, manage alert definitions, check capacity and time-remaining forecasts, detect anomalies, generate and manage reports.
+  Always use this skill for "check capacity", "what alerts are active", "show anomalies", "generate a report", "rightsizing recommendations", or any Aria/vRealize Operations task.
+  Combined with LLM, Aria data powers natural language reports: "give me a capacity report" → Aria collects data → LLM formats the report.
+  For VM operations use vmware-aiops, for networking use vmware-nsx.
 installer:
   kind: uv
   package: vmware-aria
 allowed-tools:
   - Bash
 metadata: {"openclaw":{"requires":{"env":["VMWARE_ARIA_CONFIG"],"bins":["vmware-aria"],"config":["~/.vmware-aria/config.yaml"]},"primaryEnv":"VMWARE_ARIA_CONFIG","homepage":"https://github.com/zw008/VMware-Aria","emoji":"📊","os":["macos","linux"]}}
+compatibility: >
+  Requires vmware-policy (auto-installed). All operations audited to ~/.vmware/audit.db.
 ---
 
 # VMware Aria Operations
@@ -316,6 +314,17 @@ VMs / Hosts / Clusters / Datastores / Alerts / Capacity
 ```
 
 The MCP server uses stdio transport (local only, no network listener). Connections to Aria Ops use HTTPS on port 443 with OpsToken authentication (30-minute token validity, auto-refreshed).
+
+## Audit & Safety
+
+All operations are automatically audited via vmware-policy (`@vmware_tool` decorator):
+- Every tool call logged to `~/.vmware/audit.db` (SQLite, framework-agnostic)
+- Policy rules enforced via `~/.vmware/rules.yaml` (deny rules, maintenance windows, risk levels)
+- Risk classification: each tool tagged as low/medium/high/critical
+- View recent operations: `vmware-audit log --last 20`
+- View denied operations: `vmware-audit log --status denied`
+
+vmware-policy is automatically installed as a dependency — no manual setup needed.
 
 ## License
 
