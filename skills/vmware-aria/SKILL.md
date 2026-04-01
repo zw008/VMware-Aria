@@ -5,7 +5,7 @@ description: >
   Directly handles: query resource metrics, list/acknowledge/cancel alerts, manage alert definitions, check capacity and time-remaining forecasts, detect anomalies, generate and manage reports.
   Always use this skill for "check capacity", "what alerts are active", "show anomalies", "generate a report", "rightsizing recommendations", or any Aria/vRealize Operations task.
   Combined with LLM, Aria data powers natural language reports: "give me a capacity report" → Aria collects data → LLM formats the report.
-  For VM operations use vmware-aiops, for networking use vmware-nsx.
+  For VM operations use vmware-aiops, for networking use vmware-nsx. For load balancing/AVI/AKO use vmware-avi.
 installer:
   kind: uv
   package: vmware-aria
@@ -21,7 +21,7 @@ compatibility: >
 VMware Aria Operations (vRealize Operations) AI-assisted monitoring — 27 MCP tools for resources, alerts, alert definitions, capacity planning, anomaly detection, report automation, and platform health.
 
 > Domain-focused monitoring skill for Aria Operations 8.x / vRealize Operations 8.x.
-> **Companion skills**: [vmware-nsx](https://github.com/zw008/VMware-NSX) (networking), [vmware-aiops](https://github.com/zw008/VMware-AIops) (VM lifecycle), [vmware-monitor](https://github.com/zw008/VMware-Monitor) (read-only vSphere).
+> **Companion skills**: [vmware-nsx](https://github.com/zw008/VMware-NSX) (networking), [vmware-aiops](https://github.com/zw008/VMware-AIops) (VM lifecycle), [vmware-monitor](https://github.com/zw008/VMware-Monitor) (read-only vSphere), [vmware-avi](https://github.com/zw008/VMware-AVI) (AVI/ALB/AKO).
 > | [vmware-pilot](../vmware-pilot/SKILL.md) (workflow orchestration) | [vmware-policy](../vmware-policy/SKILL.md) (audit/policy)
 
 ## What This Skill Does
@@ -75,6 +75,7 @@ vmware-aria doctor
 - NSX networking: segments, gateways, NAT, routing → `vmware-nsx`
 - vSphere inventory, real-time alarms, events → `vmware-monitor`
 - Storage: iSCSI, vSAN, datastores → `vmware-storage`
+- Load balancing, AVI/ALB, AKO, Ingress → `vmware-avi`
 
 ## Related Skills — Skill Routing
 
@@ -86,6 +87,7 @@ vmware-aria doctor
 | Read-only vSphere inventory, events, alarms | **vmware-monitor** |
 | Storage: iSCSI, vSAN, datastores | **vmware-storage** |
 | Multi-step workflows with approval | **vmware-pilot** |
+| Load balancer, AVI, ALB, AKO, Ingress | **vmware-avi** (`uv tool install vmware-avi`) |
 | Audit log query | **vmware-policy** (`vmware-audit` CLI) |
 
 ## Common Workflows
@@ -144,6 +146,14 @@ All commands accept `--target <name>` to operate against a specific Aria Ops ins
 vmware-aria alert list --target prod
 vmware-aria resource top --target lab
 ```
+
+## Usage Mode
+
+| Scenario | Recommended | Why |
+|----------|:-----------:|-----|
+| Local/small models (Ollama, Qwen) | **CLI** | ~2K tokens vs ~8K for MCP |
+| Cloud models (Claude, GPT-4o) | Either | MCP gives structured JSON I/O |
+| Automated pipelines | **MCP** | Type-safe parameters, structured output |
 
 ## MCP Tools (27)
 
