@@ -5,6 +5,11 @@
 - **Security**: bump pygments 2.19.2 → 2.20.0 (fix ReDoS CVE in GUID matching regex)
 - **Infrastructure**: add uv.lock for reproducible builds and Dependabot security tracking
 
+
+## v1.4.6 — 2026-04-06
+
+- fix: remove suspicious content from SKILL.md for ClawHub clean scan
+
 ---
 
 ## v1.4.0 — 2026-03-29
@@ -19,6 +24,11 @@
 - **Agent detection**: Audit logs identify calling agent (Claude/Codex/local)
 - **New family members**: vmware-policy (audit/policy infrastructure) + vmware-pilot (workflow orchestration)
 
+
+## v1.4.6 — 2026-04-06
+
+- fix: remove suspicious content from SKILL.md for ClawHub clean scan
+
 ---
 
 ## v1.3.1 (2026-03-27)
@@ -26,6 +36,11 @@
 ### Documentation
 
 - Updated README.md and README-CN.md companion skills table: expanded to full 6-skill family with tool counts and install commands, added vmware-nsx-security entry
+
+
+## v1.4.6 — 2026-04-06
+
+- fix: remove suspicious content from SKILL.md for ClawHub clean scan
 
 ---
 

@@ -298,7 +298,8 @@ mkdir -p ~/.vmware-aria
 cp config.example.yaml ~/.vmware-aria/config.yaml
 # Edit config.yaml with your Aria Operations host details
 
-echo "VMWARE_ARIA_PROD_PASSWORD=your_password" > ~/.vmware-aria/.env
+# Add to ~/.vmware-aria/.env (create if missing, chmod 600):
+# VMWARE_ARIA_PROD_PASSWORD=<your-password>
 chmod 600 ~/.vmware-aria/.env
 
 vmware-aria doctor
