@@ -11,7 +11,7 @@ installer:
   package: vmware-aria
 allowed-tools:
   - Bash
-metadata: {"openclaw":{"requires":{"env":["VMWARE_ARIA_CONFIG"],"bins":["vmware-aria"],"config":["~/.vmware-aria/config.yaml"]},"primaryEnv":"VMWARE_ARIA_CONFIG","homepage":"https://github.com/zw008/VMware-Aria","emoji":"📊","os":["macos","linux"]}}
+metadata: {"openclaw":{"requires":{"env":["VMWARE_ARIA_CONFIG"],"bins":["vmware-aria"],"config":["~/.vmware-aria/config.yaml","~/.vmware-aria/.env"]},"optional":{"env":["VMWARE_ARIA_TARGET_PASSWORD"],"bins":["vmware-policy"]},"primaryEnv":"VMWARE_ARIA_CONFIG","homepage":"https://github.com/zw008/VMware-Aria","emoji":"📊","os":["macos","linux"]}}
 compatibility: >
   Requires vmware-policy (auto-installed). All operations audited to ~/.vmware/audit.db.
 ---
@@ -189,7 +189,7 @@ All MCP tools accept an optional `target` parameter to select which Aria Operati
 | Health | `get_aria_health` | Read | Aria platform internal services health |
 | | `list_collector_groups` | Read | Collector agents status and connectivity |
 
-**Read/write split**: 21 read-only, 6 write. All write operations are audit-logged to `~/.vmware-aria/audit.log`.
+**Read/write split**: 21 read-only, 6 write. All write operations are audit-logged to `~/.vmware/audit.db` (via vmware-policy).
 
 ## CLI Quick Reference
 
@@ -284,7 +284,7 @@ Variable names follow the pattern `VMWARE_ARIA_<TARGET_NAME_UPPER>_PASSWORD` whe
 ## Safety
 
 - **Read-heavy**: 21 of 27 tools are read-only
-- **Audit logging**: Write operations logged to `~/.vmware-aria/audit.log` in JSON Lines format with timestamp, user, target, operation, and result
+- **Audit logging**: Write operations logged to `~/.vmware/audit.db` (SQLite WAL, via vmware-policy) with timestamp, user, target, operation, and result
 - **Token expiry handling**: OpsToken refreshed automatically 60 seconds before expiry (30-minute validity window)
 - **Prompt injection defense**: API text values sanitized via `_sanitize()` — strips control characters, truncates to 500 chars
 - **Credential safety**: Passwords loaded only from environment variables (`.env` file), never from `config.yaml`
