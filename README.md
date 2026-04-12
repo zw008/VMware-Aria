@@ -1,5 +1,9 @@
 # VMware Aria Operations MCP Skill
 
+> **Author**: Wei Zhou, VMware by Broadcom — wei-wz.zhou@broadcom.com
+> This is a community-driven project by a VMware engineer, not an official VMware product.
+> For official VMware developer tools see [developer.broadcom.com](https://developer.broadcom.com).
+
 AI-assisted monitoring and capacity planning for VMware Aria Operations (vRealize Operations) via the Model Context Protocol (MCP).
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)

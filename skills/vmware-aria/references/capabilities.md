@@ -47,8 +47,8 @@
 | vSphere inventory (VMs, hosts, clusters) read-only | `vmware-monitor` |
 | Storage: iSCSI, vSAN, datastores | `vmware-storage` |
 | Tanzu Kubernetes cluster management | `vmware-vks` |
-| Create alert definitions or policies | Not supported (UI required) |
-| Configure dashboards or reports | Not supported (UI required) |
+| Create alert definitions | Supported via `create_alert_definition` (from symptom definition IDs) |
+| Configure dashboards | Not supported (UI required) |
 | Manage Aria adapter instances | Not supported (UI required) |
 
 ---

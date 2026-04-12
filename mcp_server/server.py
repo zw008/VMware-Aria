@@ -106,7 +106,7 @@ def list_resources(
     name_filter: str | None = None,
     target: str | None = None,
 ) -> list[dict]:
-    """List resources in Aria Operations filtered by kind.
+    """[READ] List resources in Aria Operations filtered by kind.
 
     Args:
         resource_kind: Resource kind to list. Common values: VirtualMachine,
@@ -123,7 +123,7 @@ def list_resources(
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_resource(resource_id: str, target: str | None = None) -> dict:
-    """Get full details for a specific resource including health, risk, and efficiency badges.
+    """[READ] Get full details for a specific resource including health, risk, and efficiency badges.
 
     Args:
         resource_id: The resource UUID.
@@ -143,7 +143,7 @@ def get_resource_metrics(
     rollup_type: str = "AVG",
     target: str | None = None,
 ) -> dict:
-    """Fetch time-series metric statistics for a resource.
+    """[READ] Fetch time-series metric statistics for a resource.
 
     Args:
         resource_id: The resource UUID.
@@ -167,7 +167,7 @@ def get_resource_metrics(
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_resource_health(resource_id: str, target: str | None = None) -> dict:
-    """Get the health badge score for a resource (0–100, higher is healthier).
+    """[READ] Get the health badge score for a resource (0–100, higher is healthier).
 
     Args:
         resource_id: The resource UUID.
@@ -186,7 +186,7 @@ def get_top_consumers(
     top_n: int = 10,
     target: str | None = None,
 ) -> list[dict]:
-    """Query resources with highest consumption of a given metric.
+    """[READ] Query resources with highest consumption of a given metric.
 
     Args:
         metric_key: The metric to rank by. Common values: cpu|usage_average,
@@ -214,7 +214,7 @@ def list_alerts(
     limit: int = 100,
     target: str | None = None,
 ) -> list[dict]:
-    """List alerts from Aria Operations.
+    """[READ] List alerts from Aria Operations.
 
     Args:
         active_only: Return only active (non-cancelled) alerts. Default True.
@@ -231,7 +231,7 @@ def list_alerts(
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_alert(alert_id: str, target: str | None = None) -> dict:
-    """Get full details for a specific alert including symptoms and recommendations.
+    """[READ] Get full details for a specific alert including symptoms and recommendations.
 
     Args:
         alert_id: The alert UUID.
@@ -245,7 +245,7 @@ def get_alert(alert_id: str, target: str | None = None) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="medium")
 def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
-    """Acknowledge an active alert (marks it as seen, does not cancel it).
+    """[WRITE] Acknowledge an active alert (marks it as seen, does not cancel it).
 
     This is a WRITE operation — it changes the alert's control state to ACKNOWLEDGED.
     The alert remains active and will still fire notifications until cancelled.
@@ -262,7 +262,7 @@ def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="medium")
 def cancel_alert(alert_id: str, target: str | None = None) -> dict:
-    """Cancel (dismiss) an active alert. This WRITE operation permanently closes the alert.
+    """[WRITE] Cancel (dismiss) an active alert. This WRITE operation permanently closes the alert.
 
     Use acknowledge_alert if you only want to mark it as seen.
     Cancelled alerts will not re-trigger unless the underlying condition recurs.
@@ -283,7 +283,7 @@ def list_alert_definitions(
     limit: int = 100,
     target: str | None = None,
 ) -> list[dict]:
-    """List alert definitions (templates that generate alerts when triggered).
+    """[READ] List alert definitions (templates that generate alerts when triggered).
 
     Args:
         name_filter: Optional substring to filter by definition name (case-insensitive).
@@ -303,7 +303,7 @@ def list_alert_definitions(
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
-    """Get capacity recommendations and utilization overview for a cluster.
+    """[READ] Get capacity recommendations and utilization overview for a cluster.
 
     Args:
         cluster_id: The cluster resource UUID (ClusterComputeResource).
@@ -317,7 +317,7 @@ def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
-    """Get remaining capacity for a cluster or host — how much more workload can be added.
+    """[READ] Get remaining capacity for a cluster or host — how much more workload can be added.
 
     Reports remaining CPU, memory, disk, and network capacity before hitting limits.
 
@@ -333,7 +333,7 @@ def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
-    """Predict when a cluster will exhaust its capacity based on usage trends.
+    """[READ] Predict when a cluster will exhaust its capacity based on usage trends.
 
     Returns projected days until each capacity dimension (CPU, memory, disk) is full.
 
@@ -353,7 +353,7 @@ def list_rightsizing_recommendations(
     limit: int = 50,
     target: str | None = None,
 ) -> list[dict]:
-    """List VM rightsizing recommendations to reduce waste or improve performance.
+    """[READ] List VM rightsizing recommendations to reduce waste or improve performance.
 
     Identifies over-provisioned VMs (reclaim CPU/memory) and under-provisioned VMs
     (add resources to prevent performance degradation).
@@ -380,7 +380,7 @@ def list_anomalies(
     limit: int = 50,
     target: str | None = None,
 ) -> list[dict]:
-    """List anomalies detected by Aria Operations machine learning models.
+    """[READ] List anomalies detected by Aria Operations machine learning models.
 
     Anomalies are metric deviations that exceed expected behavioral patterns.
 
@@ -397,7 +397,7 @@ def list_anomalies(
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
-    """Get the risk badge score for a resource (0–100, higher = more risk of future problems).
+    """[READ] Get the risk badge score for a resource (0–100, higher = more risk of future problems).
 
     The risk badge predicts likelihood of performance degradation or availability issues
     based on current trends and workload patterns.
@@ -419,7 +419,7 @@ def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_aria_health(target: str | None = None) -> dict:
-    """Check Aria Operations platform health: all internal services and node status.
+    """[READ] Check Aria Operations platform health: all internal services and node status.
 
     Returns overall platform health, individual service states, and node information.
     Use this to verify Aria Operations is functioning correctly before investigating
@@ -436,7 +436,7 @@ def get_aria_health(target: str | None = None) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def list_collector_groups(target: str | None = None) -> list[dict]:
-    """List Aria Operations collector groups and their member collector status.
+    """[READ] List Aria Operations collector groups and their member collector status.
 
     Collectors are remote agents that gather metrics from vSphere and other adapters.
     Check this when resources appear missing from Aria Operations or metrics are stale.
@@ -462,7 +462,7 @@ def list_symptom_definitions(
     limit: int = 100,
     target: str | None = None,
 ) -> list[dict]:
-    """List symptom definitions — use the returned IDs when calling create_alert_definition.
+    """[READ] List symptom definitions — use the returned IDs when calling create_alert_definition.
 
     Args:
         name_filter: Optional substring to filter by symptom name (case-insensitive).
@@ -486,7 +486,7 @@ def create_alert_definition(
     adapter_kind: str = "VMWARE",
     target: str | None = None,
 ) -> dict:
-    """Create a new alert definition referencing existing symptom definitions.
+    """[WRITE] Create a new alert definition referencing existing symptom definitions.
 
     Use list_symptom_definitions() to find symptom_definition_ids.
 
@@ -523,7 +523,7 @@ def set_alert_definition_state(
     enabled: bool,
     target: str | None = None,
 ) -> dict:
-    """Enable or disable an existing alert definition.
+    """[WRITE] Enable or disable an existing alert definition.
 
     Args:
         definition_id: Alert definition UUID (from list_alert_definitions).
@@ -547,7 +547,7 @@ def delete_alert_definition(
     definition_id: str,
     target: str | None = None,
 ) -> dict:
-    """Permanently delete an alert definition.
+    """[WRITE] Permanently delete an alert definition.
 
     This WRITE operation removes the alert definition from Aria Operations.
     Active alerts generated by this definition will not be affected.
@@ -578,7 +578,7 @@ def list_report_definitions(
     limit: int = 100,
     target: str | None = None,
 ) -> list[dict]:
-    """List available report definition templates in Aria Operations.
+    """[READ] List available report definition templates in Aria Operations.
 
     Args:
         name_filter: Optional substring to filter by report name (case-insensitive).
@@ -597,7 +597,7 @@ def generate_report(
     resource_ids: list[str] | None = None,
     target: str | None = None,
 ) -> dict:
-    """Trigger generation of a report from a report definition template.
+    """[WRITE] Trigger generation of a report from a report definition template.
 
     Returns immediately with a report_id and PENDING status.
     Poll get_report(report_id) until status == COMPLETED, then use download_url.
@@ -626,7 +626,7 @@ def list_reports(
     limit: int = 50,
     target: str | None = None,
 ) -> list[dict]:
-    """List generated reports, optionally filtered by report definition.
+    """[READ] List generated reports, optionally filtered by report definition.
 
     Args:
         definition_id: Optional report definition UUID to filter results.
@@ -644,7 +644,7 @@ def get_report(
     report_id: str,
     target: str | None = None,
 ) -> dict:
-    """Get status and download URLs for a generated report.
+    """[READ] Get status and download URLs for a generated report.
 
     Args:
         report_id: The report UUID (from generate_report or list_reports).
@@ -661,7 +661,7 @@ def delete_report(
     report_id: str,
     target: str | None = None,
 ) -> dict:
-    """Delete a generated report from Aria Operations.
+    """[WRITE] Delete a generated report from Aria Operations.
 
     Args:
         report_id: The report UUID to delete.

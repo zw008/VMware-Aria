@@ -3,9 +3,10 @@ name: vmware-aria
 description: >
   Use this skill whenever the user needs VMware Aria Operations data — performance metrics, alerts, capacity planning, anomaly detection, and automated reports.
   Directly handles: query resource metrics, list/acknowledge/cancel alerts, manage alert definitions, check capacity and time-remaining forecasts, detect anomalies, generate and manage reports.
-  Always use this skill for "check capacity", "what alerts are active", "show anomalies", "generate a report", "rightsizing recommendations", or any Aria/vRealize Operations task.
+  Always use this skill for "check vSphere capacity", "what Aria Operations alerts are active", "show VMware anomalies", "generate an Aria report", "rightsizing recommendations", or any Aria/vRealize Operations task.
   Combined with LLM, Aria data powers natural language reports: "give me a capacity report" → Aria collects data → LLM formats the report.
-  For VM operations use vmware-aiops, for networking use vmware-nsx. For load balancing/AVI/AKO use vmware-avi.
+  Do NOT use for real-time vCenter alarms/events (use vmware-monitor), VM operations (use vmware-aiops), or NSX networking (use vmware-nsx).
+  For load balancing/AVI/AKO use vmware-avi.
 installer:
   kind: uv
   package: vmware-aria
@@ -13,7 +14,7 @@ allowed-tools:
   - Bash
 metadata: {"openclaw":{"requires":{"env":["VMWARE_ARIA_CONFIG"],"bins":["vmware-aria"],"config":["~/.vmware-aria/config.yaml","~/.vmware-aria/.env"]},"optional":{"env":["VMWARE_ARIA_TARGET_PASSWORD"],"bins":["vmware-policy"]},"primaryEnv":"VMWARE_ARIA_CONFIG","homepage":"https://github.com/zw008/VMware-Aria","emoji":"📊","os":["macos","linux"]}}
 compatibility: >
-  Requires vmware-policy (auto-installed). All operations audited to ~/.vmware/audit.db.
+  vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). All write operations audited to ~/.vmware/audit.db.
 ---
 
 # VMware Aria Operations
@@ -155,7 +156,7 @@ vmware-aria resource top --target lab
 | Cloud models (Claude, GPT-4o) | Either | MCP gives structured JSON I/O |
 | Automated pipelines | **MCP** | Type-safe parameters, structured output |
 
-## MCP Tools (27)
+## MCP Tools (27 — 21 read, 6 write)
 
 All MCP tools accept an optional `target` parameter to select which Aria Operations instance to connect to.
 
