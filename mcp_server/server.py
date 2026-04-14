@@ -98,7 +98,7 @@ def _target_name(target: str | None) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_resources(
     resource_kind: str = "VirtualMachine",
@@ -115,12 +115,15 @@ def list_resources(
         name_filter: Optional substring to filter by resource name (case-insensitive).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.resources import list_resources as _list
+    try:
+        from vmware_aria.ops.resources import list_resources as _list
 
-    return _list(_get_connection(target), resource_kind=resource_kind, limit=limit, name_filter=name_filter)
+        return _list(_get_connection(target), resource_kind=resource_kind, limit=limit, name_filter=name_filter)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_resource(resource_id: str, target: str | None = None) -> dict:
     """[READ] Get full details for a specific resource including health, risk, and efficiency badges.
@@ -129,12 +132,15 @@ def get_resource(resource_id: str, target: str | None = None) -> dict:
         resource_id: The resource UUID.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.resources import get_resource as _get
+    try:
+        from vmware_aria.ops.resources import get_resource as _get
 
-    return _get(_get_connection(target), resource_id)
+        return _get(_get_connection(target), resource_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_resource_metrics(
     resource_id: str,
@@ -154,17 +160,20 @@ def get_resource_metrics(
         rollup_type: Aggregation type: AVG, MAX, MIN, SUM, COUNT, LATEST. Default AVG.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    import time as _time
+    try:
+        import time as _time
 
-    from vmware_aria.ops.resources import get_resource_metrics as _get_metrics
+        from vmware_aria.ops.resources import get_resource_metrics as _get_metrics
 
-    client = _get_connection(target)
-    end_ms = int(_time.time() * 1000)
-    begin_ms = end_ms - (hours * 3_600_000)
-    return _get_metrics(client, resource_id, metric_keys, begin_time_ms=begin_ms, end_time_ms=end_ms, rollup_type=rollup_type)
+        client = _get_connection(target)
+        end_ms = int(_time.time() * 1000)
+        begin_ms = end_ms - (hours * 3_600_000)
+        return _get_metrics(client, resource_id, metric_keys, begin_time_ms=begin_ms, end_time_ms=end_ms, rollup_type=rollup_type)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_resource_health(resource_id: str, target: str | None = None) -> dict:
     """[READ] Get the health badge score for a resource (0–100, higher is healthier).
@@ -173,12 +182,15 @@ def get_resource_health(resource_id: str, target: str | None = None) -> dict:
         resource_id: The resource UUID.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.resources import get_resource_health as _get_health
+    try:
+        from vmware_aria.ops.resources import get_resource_health as _get_health
 
-    return _get_health(_get_connection(target), resource_id)
+        return _get_health(_get_connection(target), resource_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_top_consumers(
     metric_key: str = "cpu|usage_average",
@@ -195,9 +207,12 @@ def get_top_consumers(
         top_n: Number of top consumers to return (max 50). Default 10.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.resources import get_top_consumers as _get_top
+    try:
+        from vmware_aria.ops.resources import get_top_consumers as _get_top
 
-    return _get_top(_get_connection(target), metric_key=metric_key, resource_kind=resource_kind, top_n=top_n)
+        return _get_top(_get_connection(target), metric_key=metric_key, resource_kind=resource_kind, top_n=top_n)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -205,7 +220,7 @@ def get_top_consumers(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_alerts(
     active_only: bool = True,
@@ -223,12 +238,15 @@ def list_alerts(
         limit: Maximum number of alerts to return (1–500). Default 100.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import list_alerts as _list
+    try:
+        from vmware_aria.ops.alerts import list_alerts as _list
 
-    return _list(_get_connection(target), active_only=active_only, criticality=criticality, resource_id=resource_id, limit=limit)
+        return _list(_get_connection(target), active_only=active_only, criticality=criticality, resource_id=resource_id, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_alert(alert_id: str, target: str | None = None) -> dict:
     """[READ] Get full details for a specific alert including symptoms and recommendations.
@@ -237,12 +255,15 @@ def get_alert(alert_id: str, target: str | None = None) -> dict:
         alert_id: The alert UUID.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import get_alert as _get
+    try:
+        from vmware_aria.ops.alerts import get_alert as _get
 
-    return _get(_get_connection(target), alert_id)
+        return _get(_get_connection(target), alert_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
     """[WRITE] Acknowledge an active alert (marks it as seen, does not cancel it).
@@ -254,12 +275,15 @@ def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
         alert_id: The alert UUID to acknowledge.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import acknowledge_alert as _ack
+    try:
+        from vmware_aria.ops.alerts import acknowledge_alert as _ack
 
-    return _ack(_get_connection(target), alert_id, audit_logger=_audit, target_name=_target_name(target))
+        return _ack(_get_connection(target), alert_id, audit_logger=_audit, target_name=_target_name(target))
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def cancel_alert(alert_id: str, target: str | None = None) -> dict:
     """[WRITE] Cancel (dismiss) an active alert. This WRITE operation permanently closes the alert.
@@ -271,12 +295,15 @@ def cancel_alert(alert_id: str, target: str | None = None) -> dict:
         alert_id: The alert UUID to cancel.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import cancel_alert as _cancel
+    try:
+        from vmware_aria.ops.alerts import cancel_alert as _cancel
 
-    return _cancel(_get_connection(target), alert_id, audit_logger=_audit, target_name=_target_name(target))
+        return _cancel(_get_connection(target), alert_id, audit_logger=_audit, target_name=_target_name(target))
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_alert_definitions(
     name_filter: str | None = None,
@@ -290,9 +317,12 @@ def list_alert_definitions(
         limit: Maximum number of definitions to return (1–500). Default 100.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import list_alert_definitions as _list
+    try:
+        from vmware_aria.ops.alerts import list_alert_definitions as _list
 
-    return _list(_get_connection(target), name_filter=name_filter, limit=limit)
+        return _list(_get_connection(target), name_filter=name_filter, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -300,7 +330,7 @@ def list_alert_definitions(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
     """[READ] Get capacity recommendations and utilization overview for a cluster.
@@ -309,12 +339,15 @@ def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
         cluster_id: The cluster resource UUID (ClusterComputeResource).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.capacity import get_capacity_overview as _get
+    try:
+        from vmware_aria.ops.capacity import get_capacity_overview as _get
 
-    return _get(_get_connection(target), cluster_id)
+        return _get(_get_connection(target), cluster_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
     """[READ] Get remaining capacity for a cluster or host — how much more workload can be added.
@@ -325,12 +358,15 @@ def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
         resource_id: The resource UUID (typically ClusterComputeResource or HostSystem).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.capacity import get_remaining_capacity as _get
+    try:
+        from vmware_aria.ops.capacity import get_remaining_capacity as _get
 
-    return _get(_get_connection(target), resource_id)
+        return _get(_get_connection(target), resource_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
     """[READ] Predict when a cluster will exhaust its capacity based on usage trends.
@@ -341,12 +377,15 @@ def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
         resource_id: The resource UUID (typically ClusterComputeResource).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.capacity import get_time_remaining as _get
+    try:
+        from vmware_aria.ops.capacity import get_time_remaining as _get
 
-    return _get(_get_connection(target), resource_id)
+        return _get(_get_connection(target), resource_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_rightsizing_recommendations(
     resource_id: str | None = None,
@@ -363,9 +402,12 @@ def list_rightsizing_recommendations(
         limit: Maximum recommendations to return (1–200). Default 50.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.capacity import list_rightsizing_recommendations as _list
+    try:
+        from vmware_aria.ops.capacity import list_rightsizing_recommendations as _list
 
-    return _list(_get_connection(target), resource_id=resource_id, limit=limit)
+        return _list(_get_connection(target), resource_id=resource_id, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -373,7 +415,7 @@ def list_rightsizing_recommendations(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_anomalies(
     resource_id: str | None = None,
@@ -389,12 +431,15 @@ def list_anomalies(
         limit: Maximum anomalies to return (1–200). Default 50.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.anomaly import list_anomalies as _list
+    try:
+        from vmware_aria.ops.anomaly import list_anomalies as _list
 
-    return _list(_get_connection(target), resource_id=resource_id, limit=limit)
+        return _list(_get_connection(target), resource_id=resource_id, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
     """[READ] Get the risk badge score for a resource (0–100, higher = more risk of future problems).
@@ -406,9 +451,12 @@ def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
         resource_id: The resource UUID.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.anomaly import get_resource_riskbadge as _get
+    try:
+        from vmware_aria.ops.anomaly import get_resource_riskbadge as _get
 
-    return _get(_get_connection(target), resource_id)
+        return _get(_get_connection(target), resource_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -416,7 +464,7 @@ def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_aria_health(target: str | None = None) -> dict:
     """[READ] Check Aria Operations platform health: all internal services and node status.
@@ -428,12 +476,15 @@ def get_aria_health(target: str | None = None) -> dict:
     Args:
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.health import get_aria_health as _get
+    try:
+        from vmware_aria.ops.health import get_aria_health as _get
 
-    return _get(_get_connection(target))
+        return _get(_get_connection(target))
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_collector_groups(target: str | None = None) -> list[dict]:
     """[READ] List Aria Operations collector groups and their member collector status.
@@ -444,9 +495,12 @@ def list_collector_groups(target: str | None = None) -> list[dict]:
     Args:
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.health import list_collector_groups as _list
+    try:
+        from vmware_aria.ops.health import list_collector_groups as _list
 
-    return _list(_get_connection(target))
+        return _list(_get_connection(target))
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -454,7 +508,7 @@ def list_collector_groups(target: str | None = None) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_symptom_definitions(
     name_filter: str | None = None,
@@ -470,12 +524,15 @@ def list_symptom_definitions(
         limit: Maximum number of symptom definitions to return (1–500). Default 100.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import list_symptom_definitions as _list
+    try:
+        from vmware_aria.ops.alerts import list_symptom_definitions as _list
 
-    return _list(_get_connection(target), name_filter=name_filter, resource_kind=resource_kind, limit=limit)
+        return _list(_get_connection(target), name_filter=name_filter, resource_kind=resource_kind, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def create_alert_definition(
     name: str,
@@ -501,22 +558,25 @@ def create_alert_definition(
         adapter_kind: Adapter kind key. Default VMWARE (vSphere adapter).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import create_alert_definition as _create
+    try:
+        from vmware_aria.ops.alerts import create_alert_definition as _create
 
-    return _create(
-        _get_connection(target),
-        name=name,
-        description=description,
-        resource_kind=resource_kind,
-        symptom_definition_ids=symptom_definition_ids,
-        criticality=criticality,
-        adapter_kind=adapter_kind,
-        audit_logger=_audit,
-        target_name=_target_name(target),
-    )
+        return _create(
+            _get_connection(target),
+            name=name,
+            description=description,
+            resource_kind=resource_kind,
+            symptom_definition_ids=symptom_definition_ids,
+            criticality=criticality,
+            adapter_kind=adapter_kind,
+            audit_logger=_audit,
+            target_name=_target_name(target),
+        )
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def set_alert_definition_state(
     definition_id: str,
@@ -530,18 +590,21 @@ def set_alert_definition_state(
         enabled: True to enable the definition, False to disable it.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import set_alert_definition_state as _set_state
+    try:
+        from vmware_aria.ops.alerts import set_alert_definition_state as _set_state
 
-    return _set_state(
-        _get_connection(target),
-        definition_id=definition_id,
-        enabled=enabled,
-        audit_logger=_audit,
-        target_name=_target_name(target),
-    )
+        return _set_state(
+            _get_connection(target),
+            definition_id=definition_id,
+            enabled=enabled,
+            audit_logger=_audit,
+            target_name=_target_name(target),
+        )
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def delete_alert_definition(
     definition_id: str,
@@ -556,14 +619,17 @@ def delete_alert_definition(
         definition_id: Alert definition UUID to delete.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.alerts import delete_alert_definition as _delete
+    try:
+        from vmware_aria.ops.alerts import delete_alert_definition as _delete
 
-    return _delete(
-        _get_connection(target),
-        definition_id=definition_id,
-        audit_logger=_audit,
-        target_name=_target_name(target),
-    )
+        return _delete(
+            _get_connection(target),
+            definition_id=definition_id,
+            audit_logger=_audit,
+            target_name=_target_name(target),
+        )
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -571,7 +637,7 @@ def delete_alert_definition(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_report_definitions(
     name_filter: str | None = None,
@@ -585,12 +651,15 @@ def list_report_definitions(
         limit: Maximum number of definitions to return (1–500). Default 100.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.reports import list_report_definitions as _list
+    try:
+        from vmware_aria.ops.reports import list_report_definitions as _list
 
-    return _list(_get_connection(target), name_filter=name_filter, limit=limit)
+        return _list(_get_connection(target), name_filter=name_filter, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def generate_report(
     definition_id: str,
@@ -608,18 +677,21 @@ def generate_report(
             If omitted, the report runs against all resources in the template scope.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.reports import generate_report as _generate
+    try:
+        from vmware_aria.ops.reports import generate_report as _generate
 
-    return _generate(
-        _get_connection(target),
-        definition_id=definition_id,
-        resource_ids=resource_ids,
-        audit_logger=_audit,
-        target_name=_target_name(target),
-    )
+        return _generate(
+            _get_connection(target),
+            definition_id=definition_id,
+            resource_ids=resource_ids,
+            audit_logger=_audit,
+            target_name=_target_name(target),
+        )
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_reports(
     definition_id: str | None = None,
@@ -633,12 +705,15 @@ def list_reports(
         limit: Maximum number of reports to return (1–200). Default 50.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.reports import list_reports as _list
+    try:
+        from vmware_aria.ops.reports import list_reports as _list
 
-    return _list(_get_connection(target), definition_id=definition_id, limit=limit)
+        return _list(_get_connection(target), definition_id=definition_id, limit=limit)
+    except Exception as e:
+        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_report(
     report_id: str,
@@ -650,12 +725,15 @@ def get_report(
         report_id: The report UUID (from generate_report or list_reports).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.reports import get_report as _get
+    try:
+        from vmware_aria.ops.reports import get_report as _get
 
-    return _get(_get_connection(target), report_id)
+        return _get(_get_connection(target), report_id)
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def delete_report(
     report_id: str,
@@ -667,14 +745,17 @@ def delete_report(
         report_id: The report UUID to delete.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
-    from vmware_aria.ops.reports import delete_report as _delete
+    try:
+        from vmware_aria.ops.reports import delete_report as _delete
 
-    return _delete(
-        _get_connection(target),
-        report_id=report_id,
-        audit_logger=_audit,
-        target_name=_target_name(target),
-    )
+        return _delete(
+            _get_connection(target),
+            report_id=report_id,
+            audit_logger=_audit,
+            target_name=_target_name(target),
+        )
+    except Exception as e:
+        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 # ---------------------------------------------------------------------------
