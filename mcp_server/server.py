@@ -265,16 +265,28 @@ def get_alert(alert_id: str, target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
-def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
+def acknowledge_alert(alert_id: str, confirmed: bool = False, target: str | None = None) -> dict:
     """[WRITE] Acknowledge an active alert (marks it as seen, does not cancel it).
 
     This is a WRITE operation — it changes the alert's control state to ACKNOWLEDGED.
     The alert remains active and will still fire notifications until cancelled.
+    Default confirmed=False returns a preview without making any change.
 
     Args:
         alert_id: The alert UUID to acknowledge.
+        confirmed: Must be True to actually acknowledge. Default False = preview only.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
+    if not confirmed:
+        return {
+            "preview": True,
+            "action": "acknowledge",
+            "alert_id": alert_id,
+            "message": (
+                f"[preview] Would acknowledge alert {alert_id}. "
+                "Re-invoke with confirmed=True to execute."
+            ),
+        }
     try:
         from vmware_aria.ops.alerts import acknowledge_alert as _ack
 
@@ -285,16 +297,28 @@ def acknowledge_alert(alert_id: str, target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
-def cancel_alert(alert_id: str, target: str | None = None) -> dict:
+def cancel_alert(alert_id: str, confirmed: bool = False, target: str | None = None) -> dict:
     """[WRITE] Cancel (dismiss) an active alert. This WRITE operation permanently closes the alert.
 
     Use acknowledge_alert if you only want to mark it as seen.
     Cancelled alerts will not re-trigger unless the underlying condition recurs.
+    Default confirmed=False returns a preview without making any change.
 
     Args:
         alert_id: The alert UUID to cancel.
+        confirmed: Must be True to actually cancel. Default False = preview only.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
+    if not confirmed:
+        return {
+            "preview": True,
+            "action": "cancel",
+            "alert_id": alert_id,
+            "message": (
+                f"[preview] Would cancel alert {alert_id}. "
+                "Re-invoke with confirmed=True to execute."
+            ),
+        }
     try:
         from vmware_aria.ops.alerts import cancel_alert as _cancel
 

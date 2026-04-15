@@ -1,3 +1,9 @@
+## v1.5.8 (2026-04-15)
+
+- Fix: MCP destructive tools `acknowledge_alert` and `cancel_alert` bypassed confirmation gates in MCP mode (CLI used interactive `double_confirm` which cannot run via stdio). Added `confirmed: bool = False` parameter with preview-by-default response; callers must pass `confirmed=True` to actually execute.
+- Fix: SSL warning suppression scope — replaced `warnings.filterwarnings()` with class-targeted `urllib3.disable_warnings(InsecureRequestWarning)`.
+- Align with VMware skill family v1.5.8
+
 ## v1.5.7 (2026-04-15)
 
 - Align with VMware skill family v1.5.7 (Pilot `__from_step_N__` fix + VKS SSL/timeout fix)

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import time
-import warnings
 from typing import Any
 
 import httpx
@@ -34,9 +33,12 @@ class AriaClient:
         # Epoch seconds when the token expires
         self._token_expires_at: float = 0.0
 
-        # Suppress InsecureRequestWarning for self-signed certs
+        # Suppress urllib3's InsecureRequestWarning for self-signed certs.
+        # urllib3.disable_warnings is class-targeted and idempotent; it avoids
+        # the process-global side-effects of warnings.filterwarnings().
         if not target.verify_ssl:
-            warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         self._client = httpx.Client(
             base_url=self._base_url,
