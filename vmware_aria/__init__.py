@@ -1,3 +1,3 @@
 """VMware Aria Operations (vRealize Operations) monitoring and capacity planning."""
 
-__version__ = "1.5.10"
+__version__ = "1.5.11"
