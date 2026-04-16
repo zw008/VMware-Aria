@@ -1,3 +1,8 @@
+## v1.5.10 (2026-04-16)
+
+- Security: bump python-multipart 0.0.22→0.0.26 (DoS via large multipart preamble/epilogue)
+- Align with VMware skill family v1.5.10
+
 ## v1.5.8 (2026-04-15)
 
 - Fix: MCP destructive tools `acknowledge_alert` and `cancel_alert` bypassed confirmation gates in MCP mode (CLI used interactive `double_confirm` which cannot run via stdio). Added `confirmed: bool = False` parameter with preview-by-default response; callers must pass `confirmed=True` to actually execute.
