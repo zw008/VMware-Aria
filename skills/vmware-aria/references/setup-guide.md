@@ -153,7 +153,8 @@ Add to `~/.claude.json` (or use `claude mcp add`):
 {
   "mcpServers": {
     "vmware-aria": {
-      "command": "vmware-aria-mcp",
+      "command": "vmware-aria",
+      "args": ["mcp"],
       "env": {
         "VMWARE_ARIA_CONFIG": "/Users/<username>/.vmware-aria/config.yaml"
       }
@@ -161,6 +162,12 @@ Add to `~/.claude.json` (or use `claude mcp add`):
   }
 }
 ```
+
+> v1.5.15+ recommends `vmware-aria mcp`. Pre-1.5.15 used the legacy
+> `vmware-aria-mcp` console script (still kept for backward compatibility).
+> If using `uvx --from vmware-aria vmware-aria mcp` and you hit
+> `invalid peer certificate: UnknownIssuer` behind a corporate TLS proxy,
+> set `UV_NATIVE_TLS=true` or use the recommended form above.
 
 ### With Cursor
 

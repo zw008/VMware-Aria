@@ -288,6 +288,10 @@ The resource may not have metric collection configured, or the requested metric 
 
 Variable names follow the pattern `VMWARE_ARIA_<TARGET_NAME_UPPER>_PASSWORD` where hyphens become underscores. Example: target `prod` needs `VMWARE_ARIA_PROD_PASSWORD`. Check your `~/.vmware-aria/.env` file.
 
+### `invalid peer certificate: UnknownIssuer` when running uvx (corporate TLS proxy)
+
+`uvx` re-resolves dependencies from PyPI on every launch. Behind a corporate TLS-intercepting proxy whose CA is not in uv's bundled cert store, the handshake fails. Use the v1.5.15+ recommended single-command form `vmware-aria mcp` (after `uv tool install vmware-aria` — no network on launch), or set `UV_NATIVE_TLS=true` to make uv use the system cert store.
+
 ## Safety
 
 - **Read-heavy**: 21 of 27 tools are read-only

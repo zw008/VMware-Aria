@@ -10,4 +10,4 @@ COPY mcp_server/ mcp_server/
 
 RUN uv pip install --system .
 
-CMD ["python", "-m", "mcp_server"]
+CMD ["vmware-aria", "mcp"]

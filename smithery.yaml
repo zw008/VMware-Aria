@@ -9,7 +9,7 @@ startCommand:
     required: []
   commandFunction: |
     (config) => ({
-      command: "vmware-aria-mcp",
-      args: [],
+      command: "vmware-aria",
+      args: ["mcp"],
       env: config.config_path ? { VMWARE_ARIA_CONFIG: config.config_path } : {}
     })

@@ -42,6 +42,21 @@ app.add_typer(anomaly_app, name="anomaly")
 app.add_typer(health_app, name="health")
 app.add_typer(report_app, name="report")
 
+
+@app.command("mcp")
+def mcp_cmd() -> None:
+    """Start the MCP server (stdio transport).
+
+    Single-command entry point for MCP clients:
+        vmware-aria mcp
+
+    Equivalent to the legacy `vmware-aria-mcp` console script.
+    """
+    from mcp_server.server import main as _mcp_main
+
+    _mcp_main()
+
+
 # ─── Type aliases ────────────────────────────────────────────────────────────
 
 TargetOption = Annotated[

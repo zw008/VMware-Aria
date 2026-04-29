@@ -79,13 +79,14 @@ vmware-aria health collectors
 
 ## MCP Setup (Claude Code)
 
-Add to `~/.claude.json`:
+After `uv tool install vmware-aria`, add to `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "vmware-aria": {
-      "command": "vmware-aria-mcp",
+      "command": "vmware-aria",
+      "args": ["mcp"],
       "env": {
         "VMWARE_ARIA_CONFIG": "~/.vmware-aria/config.yaml"
       }
@@ -93,6 +94,12 @@ Add to `~/.claude.json`:
   }
 }
 ```
+
+> **v1.5.15+** uses the single-command form `vmware-aria mcp`. The legacy
+> `vmware-aria-mcp` console script is still kept for backward compatibility.
+> If you must use `uvx --from vmware-aria vmware-aria mcp` (no install) and hit
+> `invalid peer certificate: UnknownIssuer` behind a corporate TLS proxy, set
+> `UV_NATIVE_TLS=true` or use the recommended `vmware-aria mcp` form above.
 
 Then use natural language:
 - *"Show me the top 10 CPU consumers right now"*

@@ -75,13 +75,14 @@ vmware-aria health status
 
 ## MCP 配置（Claude Code）
 
-在 `~/.claude.json` 中添加：
+完成 `uv tool install vmware-aria` 后，在 `~/.claude.json` 中添加：
 
 ```json
 {
   "mcpServers": {
     "vmware-aria": {
-      "command": "vmware-aria-mcp",
+      "command": "vmware-aria",
+      "args": ["mcp"],
       "env": {
         "VMWARE_ARIA_CONFIG": "~/.vmware-aria/config.yaml"
       }
@@ -89,6 +90,11 @@ vmware-aria health status
   }
 }
 ```
+
+> **v1.5.15+** 推荐使用单命令 `vmware-aria mcp`。旧的 `vmware-aria-mcp` 入口仍然
+> 保留以向后兼容。如必须使用 `uvx --from vmware-aria vmware-aria mcp`（不安装）
+> 且公司 TLS 代理报 `invalid peer certificate: UnknownIssuer`，请设置
+> `UV_NATIVE_TLS=true`，或直接使用上面的 `vmware-aria mcp` 形式。
 
 然后即可使用自然语言：
 - *"显示当前 CPU 占用最高的 10 台虚拟机"*
