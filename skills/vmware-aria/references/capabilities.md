@@ -1,5 +1,22 @@
 # Capabilities
 
+## Automation Level Reference
+
+Each operation is classified by autonomy level per the Enterprise Harness Engineering framework. **vmware-aria is heavily L1/L2 (21 read / 6 write)** — primarily a monitoring and analysis skill.
+
+| Level | Meaning | Agent autonomy | Examples in this skill |
+|:-:|---|---|---|
+| **L1** | Read-only, raw data | Always auto-run | `list_resources`, `get_resource`, `get_metrics`, `list_alerts`, `get_alert_details`, `list_alert_definitions`, capacity/efficiency badge queries |
+| **L2** | Read + analysis / recommendation | Always auto-run | anomaly detection, top-N consumer ranking, capacity trend forecasting, alert correlation, symptom-to-recommendation mapping |
+| **L3** | Single write — user must approve | Only after explicit confirmation | `acknowledge_alert`, `cancel_alert`, `suspend_alert`, `take_alert_ownership` *(the only writes; all auditable)* |
+| **L4** | Multi-step plan / apply workflow | *N/A currently* | — *(no multi-step orchestration; Aria is observe/analyze, not configure)* |
+| **L5** | Auto-remediation from learned pattern | Pattern library only; requires `risk:low` + `reversible:true` + `repeatable:true` | *(roadmap — candidates: auto-acknowledge known-noisy alerts, auto-cancel resolved-by-event alerts)* |
+
+**Notes**:
+- L1/L2 tools are always safe for agents to call without confirmation.
+- L3 alert-state writes pass through the `@vmware_tool` decorator: connection check → policy check → audit log. Cancel is irreversible by Aria API design and treated as a destructive operation.
+- For VM/host operations see [vmware-aiops](https://github.com/zw008/VMware-AIops); Aria recommendations are advisory, not actuating.
+
 ## What vmware-aria Can Do
 
 ### Resource Monitoring

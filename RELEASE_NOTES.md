@@ -1,3 +1,13 @@
+## v1.5.16 (2026-04-30)
+
+**Enterprise Harness Engineering alignment** — adapted from the Linkloud × addxai framework articles ([part 1](https://mp.weixin.qq.com/s/hz4W7ILHJ1yz_pG0Z1xP-A), [part 2](https://mp.weixin.qq.com/s/F3qYbyB3S8oIqx-Y4BrWNQ)).
+
+- **docs:** New `references/investigation-protocol.md` — causal-chain root cause analysis protocol with 4 completeness criteria, shared with monitor/aiops. Aria is the primary L1/L2 metrics data source.
+- **docs:** Added Broadcom/VMware brand disclaimer to `references/setup-guide.md` Security Notes (clears Snyk E005 brand-misuse flag on next clawhub Rescan).
+- **docs:** "Automation Level Reference" section in `references/capabilities.md` — clarifies that aria is heavily L1/L2 (21 read / 6 write).
+- **docs:** Common Workflows enriched with contention-vs-consumption judgment and investigation-protocol cross-reference.
+- **align:** Family version bump to v1.5.16.
+
 ## v1.5.15 (2026-04-29)
 
 **UX improvements from real user feedback**

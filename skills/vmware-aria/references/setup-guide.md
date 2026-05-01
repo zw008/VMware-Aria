@@ -206,6 +206,9 @@ The docker-compose.yml mounts `~/.vmware-aria` read-only into the container.
 
 ## Security Notes
 
+> **Disclaimer**: This is a community-maintained open-source project and is **not affiliated with, endorsed by, or sponsored by VMware, Inc. or Broadcom Inc.** "VMware" and "Aria" are trademarks of Broadcom.
+
+- **Source Code**: Fully open source at [github.com/zw008/VMware-Aria](https://github.com/zw008/VMware-Aria) (MIT). The `uv` installer fetches the `vmware-aria` package from PyPI, which is built from this GitHub repository. We recommend reviewing the source code and commit history before deploying in production.
 - **Never** store passwords in `config.yaml` — use env vars or `.env` file
 - `.env` file must be `chmod 600` (owner read/write only)
 - Use `verify_ssl: true` in production; only disable for lab environments

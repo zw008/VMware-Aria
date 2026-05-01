@@ -99,17 +99,20 @@ vmware-aria doctor
 
 ## Common Workflows
 
+> **Diagnostic investigations**: Before running any "why is X slow / failing / down" workflow, follow [`references/investigation-protocol.md`](references/investigation-protocol.md). It enforces the four root-cause completeness criteria (falsifiability / sufficiency / necessity / mechanism) and the up-to-three-rounds deepening loop. Stopping at a partial conclusion is an anti-pattern — always self-check against the criteria before outputting a report.
+
 ### Daily VM Health Check (Proactive Ops)
 
-Catch contention before users complain. Key metrics: CPU Ready, Memory Balloon, Disk Latency.
+**Judgment**: don't chase the highest CPU consumer — chase the highest **contention** consumer. A VM at 90% CPU on a quiet host is healthy; a VM at 30% CPU but 15% Ready is starving. Key metrics: CPU Ready, Memory Balloon, Disk Latency.
 
-1. Find top CPU consumers → `vmware-aria resource top --metric cpu|usage_average --top 20`
+1. Find top CPU consumers → `vmware-aria resource top --metric cpu|usage_average --top 20` (this is the **starting set**, not the answer)
 2. Check CPU Ready on hot VMs → `vmware-aria resource metrics <vm-id> --metrics cpu.ready.summation --hours 24`
    - >5% = warning, >10% = problem, >20% = critical
 3. Check memory pressure → `vmware-aria resource metrics <vm-id> --metrics mem.balloon.average,mem.swapped.average --hours 24`
    - Balloon >0 = ESXi reclaiming memory; Swap >0 = severe — act immediately
 4. List active CRITICAL/IMMEDIATE alerts → `vmware-aria alert list --criticality CRITICAL`
 5. Check ML anomalies → `vmware-aria anomaly list`
+6. Cross-validate against the [investigation protocol](references/investigation-protocol.md) before reporting any "root cause" — high consumption is rarely the root, usually a downstream symptom
 
 ### Investigate High CPU Alert
 
