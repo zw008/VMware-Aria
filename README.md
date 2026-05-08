@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.zw008/vmware-aria -->
 # VMware Aria Operations MCP Skill
 
 > **Author**: Wei Zhou, VMware by Broadcom — wei-wz.zhou@broadcom.com
