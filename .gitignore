@@ -17,3 +17,5 @@ env/
 *.log
 *.sqlite3
 .DS_Store
+.trae/
+skills-lock.json

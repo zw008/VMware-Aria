@@ -1,6 +1,8 @@
 <!-- mcp-name: io.github.zw008/vmware-aria -->
 # VMware Aria Operations MCP Skill
 
+> **Note**: In VCF 9.0 and later, **VMware Aria Operations** has been rebranded as **VCF Operations**. This skill works against both names — the `/suite-api/` REST endpoints are unchanged.
+
 > **Author**: Wei Zhou, VMware by Broadcom — wei-wz.zhou@broadcom.com
 > This is a community-driven project by a VMware engineer, not an official VMware product.
 > For official VMware developer tools see [developer.broadcom.com](https://developer.broadcom.com).
@@ -154,6 +156,12 @@ VMs / Hosts / Clusters / Alerts / Capacity
 - Write operations (acknowledge/cancel alert) audit-logged to `~/.vmware-aria/audit.log`
 - API responses sanitized (control chars stripped, 500-char limit) to prevent prompt injection
 - Supports self-signed certificates (`verify_ssl: false`) for lab environments
+
+#### Official Broadcom References
+
+- **REST APIs**: <https://developer.broadcom.com/xapis> — VCF Operations API (formerly Aria Operations suite-api)
+- **SDKs**: <https://developer.broadcom.com/sdks> — VCF Python SDK
+- **CLI Tools**: <https://developer.broadcom.com/tools> — PowerCLI 9.1 includes "VCF Operations (formerly vRealize Operations Manager)" cmdlets
 
 ## License
 

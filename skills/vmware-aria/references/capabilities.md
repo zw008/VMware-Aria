@@ -98,10 +98,12 @@ Each operation is classified by autonomy level per the Enterprise Harness Engine
 
 ---
 
-## Aria Operations Version Compatibility
+## Aria Operations / VCF Operations Version Compatibility
 
 | Feature | Minimum Version |
 |---------|----------------|
+| VCF Operations 9.1 (VCF 9.1) | ✅ Full — Aria Operations rebranded as VCF Operations in VCF 9. |
+| VCF Operations 9.0 (VCF 9.0) | ✅ Full — suite-api endpoints unchanged. |
 | Token authentication | 6.6+ |
 | Resource metrics stats query | 6.7+ |
 | Rightsizing recommendations | 7.0+ |

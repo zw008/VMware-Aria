@@ -1,3 +1,12 @@
+## v1.5.23 (2026-05-19)
+
+**VCF 9.0 / 9.1 ("VCF Operations") compatibility declared.**
+
+- **docs:** README and `references/capabilities.md` now note that in VCF 9.0+, "VMware Aria Operations" has been rebranded to **VCF Operations**. The suite-api REST endpoints (`/suite-api/api/auth/token/acquire`, `/resources`, `/alerts`, etc.) are unchanged — this skill continues to work against VCF Operations 9.x without code changes.
+- **docs:** Added `Official Broadcom References` pointer to [VCF Operations API docs](https://developer.broadcom.com/xapis) and the [VCF Python SDK](https://developer.broadcom.com/sdks).
+- **chore:** `.trae/` and `skills-lock.json` added to `.gitignore` (local IDE/tool artifacts).
+- **align:** Family v1.5.23 — all 9 skills tracking VCF 9.0 / 9.1 compatibility declaration.
+
 ## v1.5.22 (2026-05-08)
 
 **Family alignment** — no source changes in this skill.
