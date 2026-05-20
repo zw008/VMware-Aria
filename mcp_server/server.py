@@ -47,7 +47,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 from vmware_policy import vmware_tool
@@ -74,10 +74,10 @@ mcp = FastMCP(
 # Connection helper
 # ---------------------------------------------------------------------------
 
-_conn_mgr: ConnectionManager | None = None
+_conn_mgr: Optional[ConnectionManager] = None
 
 
-def _get_connection(target: str | None = None) -> Any:
+def _get_connection(target: Optional[str] = None) -> Any:
     """Return an AriaClient, lazily initialising the connection manager."""
     global _conn_mgr  # noqa: PLW0603
     if _conn_mgr is None:
@@ -88,7 +88,7 @@ def _get_connection(target: str | None = None) -> Any:
     return _conn_mgr.connect(target)
 
 
-def _target_name(target: str | None) -> str:
+def _target_name(target: Optional[str]) -> str:
     """Return display name for audit log entries."""
     return target or "default"
 
@@ -103,8 +103,8 @@ def _target_name(target: str | None) -> str:
 def list_resources(
     resource_kind: str = "VirtualMachine",
     limit: int = 100,
-    name_filter: str | None = None,
-    target: str | None = None,
+    name_filter: Optional[str] = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List resources in Aria Operations filtered by kind.
 
@@ -125,7 +125,7 @@ def list_resources(
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_resource(resource_id: str, target: str | None = None) -> dict:
+def get_resource(resource_id: str, target: Optional[str] = None) -> dict:
     """[READ] Get full details for a specific resource including health, risk, and efficiency badges.
 
     Args:
@@ -147,7 +147,7 @@ def get_resource_metrics(
     metric_keys: list[str],
     hours: int = 1,
     rollup_type: str = "AVG",
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[READ] Fetch time-series metric statistics for a resource.
 
@@ -175,7 +175,7 @@ def get_resource_metrics(
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_resource_health(resource_id: str, target: str | None = None) -> dict:
+def get_resource_health(resource_id: str, target: Optional[str] = None) -> dict:
     """[READ] Get the health badge score for a resource (0–100, higher is healthier).
 
     Args:
@@ -196,7 +196,7 @@ def get_top_consumers(
     metric_key: str = "cpu|usage_average",
     resource_kind: str = "VirtualMachine",
     top_n: int = 10,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] Query resources with highest consumption of a given metric.
 
@@ -224,10 +224,10 @@ def get_top_consumers(
 @vmware_tool(risk_level="low")
 def list_alerts(
     active_only: bool = True,
-    criticality: str | None = None,
-    resource_id: str | None = None,
+    criticality: Optional[str] = None,
+    resource_id: Optional[str] = None,
     limit: int = 100,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List alerts from Aria Operations.
 
@@ -248,7 +248,7 @@ def list_alerts(
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_alert(alert_id: str, target: str | None = None) -> dict:
+def get_alert(alert_id: str, target: Optional[str] = None) -> dict:
     """[READ] Get full details for a specific alert including symptoms and recommendations.
 
     Args:
@@ -265,7 +265,7 @@ def get_alert(alert_id: str, target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
-def acknowledge_alert(alert_id: str, confirmed: bool = False, target: str | None = None) -> dict:
+def acknowledge_alert(alert_id: str, confirmed: bool = False, target: Optional[str] = None) -> dict:
     """[WRITE] Acknowledge an active alert (marks it as seen, does not cancel it).
 
     This is a WRITE operation — it changes the alert's control state to ACKNOWLEDGED.
@@ -297,7 +297,7 @@ def acknowledge_alert(alert_id: str, confirmed: bool = False, target: str | None
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
-def cancel_alert(alert_id: str, confirmed: bool = False, target: str | None = None) -> dict:
+def cancel_alert(alert_id: str, confirmed: bool = False, target: Optional[str] = None) -> dict:
     """[WRITE] Cancel (dismiss) an active alert. This WRITE operation permanently closes the alert.
 
     Use acknowledge_alert if you only want to mark it as seen.
@@ -330,9 +330,9 @@ def cancel_alert(alert_id: str, confirmed: bool = False, target: str | None = No
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_alert_definitions(
-    name_filter: str | None = None,
+    name_filter: Optional[str] = None,
     limit: int = 100,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List alert definitions (templates that generate alerts when triggered).
 
@@ -356,7 +356,7 @@ def list_alert_definitions(
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
+def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict:
     """[READ] Get capacity recommendations and utilization overview for a cluster.
 
     Args:
@@ -373,7 +373,7 @@ def get_capacity_overview(cluster_id: str, target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
+def get_remaining_capacity(resource_id: str, target: Optional[str] = None) -> dict:
     """[READ] Get remaining capacity for a cluster or host — how much more workload can be added.
 
     Reports remaining CPU, memory, disk, and network capacity before hitting limits.
@@ -392,7 +392,7 @@ def get_remaining_capacity(resource_id: str, target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
+def get_time_remaining(resource_id: str, target: Optional[str] = None) -> dict:
     """[READ] Predict when a cluster will exhaust its capacity based on usage trends.
 
     Returns projected days until each capacity dimension (CPU, memory, disk) is full.
@@ -412,9 +412,9 @@ def get_time_remaining(resource_id: str, target: str | None = None) -> dict:
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_rightsizing_recommendations(
-    resource_id: str | None = None,
+    resource_id: Optional[str] = None,
     limit: int = 50,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List VM rightsizing recommendations to reduce waste or improve performance.
 
@@ -442,9 +442,9 @@ def list_rightsizing_recommendations(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_anomalies(
-    resource_id: str | None = None,
+    resource_id: Optional[str] = None,
     limit: int = 50,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List anomalies detected by Aria Operations machine learning models.
 
@@ -465,7 +465,7 @@ def list_anomalies(
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
+def get_resource_riskbadge(resource_id: str, target: Optional[str] = None) -> dict:
     """[READ] Get the risk badge score for a resource (0–100, higher = more risk of future problems).
 
     The risk badge predicts likelihood of performance degradation or availability issues
@@ -490,7 +490,7 @@ def get_resource_riskbadge(resource_id: str, target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def get_aria_health(target: str | None = None) -> dict:
+def get_aria_health(target: Optional[str] = None) -> dict:
     """[READ] Check Aria Operations platform health: all internal services and node status.
 
     Returns overall platform health, individual service states, and node information.
@@ -510,7 +510,7 @@ def get_aria_health(target: str | None = None) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
-def list_collector_groups(target: str | None = None) -> list[dict]:
+def list_collector_groups(target: Optional[str] = None) -> list[dict]:
     """[READ] List Aria Operations collector groups and their member collector status.
 
     Collectors are remote agents that gather metrics from vSphere and other adapters.
@@ -535,10 +535,10 @@ def list_collector_groups(target: str | None = None) -> list[dict]:
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_symptom_definitions(
-    name_filter: str | None = None,
-    resource_kind: str | None = None,
+    name_filter: Optional[str] = None,
+    resource_kind: Optional[str] = None,
     limit: int = 100,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List symptom definitions — use the returned IDs when calling create_alert_definition.
 
@@ -565,7 +565,7 @@ def create_alert_definition(
     symptom_definition_ids: list[str],
     criticality: str = "WARNING",
     adapter_kind: str = "VMWARE",
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[WRITE] Create a new alert definition referencing existing symptom definitions.
 
@@ -605,7 +605,7 @@ def create_alert_definition(
 def set_alert_definition_state(
     definition_id: str,
     enabled: bool,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[WRITE] Enable or disable an existing alert definition.
 
@@ -632,7 +632,7 @@ def set_alert_definition_state(
 @vmware_tool(risk_level="medium")
 def delete_alert_definition(
     definition_id: str,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[WRITE] Permanently delete an alert definition.
 
@@ -664,9 +664,9 @@ def delete_alert_definition(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_report_definitions(
-    name_filter: str | None = None,
+    name_filter: Optional[str] = None,
     limit: int = 100,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List available report definition templates in Aria Operations.
 
@@ -687,8 +687,8 @@ def list_report_definitions(
 @vmware_tool(risk_level="medium")
 def generate_report(
     definition_id: str,
-    resource_ids: list[str] | None = None,
-    target: str | None = None,
+    resource_ids: Optional[list[str]] = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[WRITE] Trigger generation of a report from a report definition template.
 
@@ -718,9 +718,9 @@ def generate_report(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_reports(
-    definition_id: str | None = None,
+    definition_id: Optional[str] = None,
     limit: int = 50,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> list[dict]:
     """[READ] List generated reports, optionally filtered by report definition.
 
@@ -741,7 +741,7 @@ def list_reports(
 @vmware_tool(risk_level="low")
 def get_report(
     report_id: str,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[READ] Get status and download URLs for a generated report.
 
@@ -761,7 +761,7 @@ def get_report(
 @vmware_tool(risk_level="medium")
 def delete_report(
     report_id: str,
-    target: str | None = None,
+    target: Optional[str] = None,
 ) -> dict:
     """[WRITE] Delete a generated report from Aria Operations.
 
