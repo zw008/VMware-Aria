@@ -42,7 +42,6 @@ For VM lifecycle operations use vmware-aiops.
 For NSX networking use vmware-nsx.
 """
 
-from __future__ import annotations
 
 import logging
 import os
