@@ -125,10 +125,10 @@ def list_resources(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_resource(resource_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get full details for a specific resource including health, risk, and efficiency badges.
+    """[READ] Get full details for one resource by UUID, including health, risk, and efficiency badges (each a color plus 0-100 score), resource kind, adapter kind, identifiers, and status states. Use after list_resources to inspect a single resource in depth; use list_resources (not this tool) to discover UUIDs by kind or name. For just the health score use get_resource_health; for time-series metrics use get_resource_metrics.
 
     Args:
-        resource_id: The resource UUID.
+        resource_id: The resource UUID (from list_resources).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
@@ -248,10 +248,10 @@ def list_alerts(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_alert(alert_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get full details for a specific alert including symptoms and recommendations.
+    """[READ] Get full details for one alert by UUID, including its triggering symptoms and remediation recommendations. Use after list_alerts to drill into a single alert; use list_alerts (not this tool) to discover or filter alerts. Returns one alert object: name, criticality, status, impact, affected resource, start/update/cancel timestamps, symptom list, and recommendations. To act on the alert afterwards, use acknowledge_alert or cancel_alert.
 
     Args:
-        alert_id: The alert UUID.
+        alert_id: The alert UUID (from list_alerts).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
@@ -356,10 +356,10 @@ def list_alert_definitions(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get capacity recommendations and utilization overview for a cluster.
+    """[READ] Get Aria Operations capacity recommendations for a cluster — suggested optimization actions with reasoning and impact. Returns recommendation_count plus a list of recommendations, each with id, type, description, impact, and reasoning. Start here when assessing overall cluster capacity health; for numeric headroom per dimension use get_remaining_capacity, and for projected exhaustion dates use get_time_remaining.
 
     Args:
-        cluster_id: The cluster resource UUID (ClusterComputeResource).
+        cluster_id: The cluster resource UUID (ClusterComputeResource, from list_resources).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
@@ -373,12 +373,10 @@ def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_remaining_capacity(resource_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get remaining capacity for a cluster or host — how much more workload can be added.
-
-    Reports remaining CPU, memory, disk, and network capacity before hitting limits.
+    """[READ] Get remaining capacity headroom for a cluster or host — how much more workload fits before hitting limits. Returns one entry per capacity dimension (CPU, memory, disk, network), each with metric name, remaining_value, unit (varies per metric, e.g. MHz or KB), usable_capacity, used_capacity, and current demand. Use this for numeric headroom; use get_capacity_overview for optimization recommendations, or get_time_remaining for projected days-until-full.
 
     Args:
-        resource_id: The resource UUID (typically ClusterComputeResource or HostSystem).
+        resource_id: The resource UUID — a ClusterComputeResource or HostSystem (from list_resources).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
@@ -762,10 +760,10 @@ def delete_report(
     report_id: str,
     target: Optional[str] = None,
 ) -> dict:
-    """[WRITE] Delete a generated report from Aria Operations.
+    """[WRITE] Permanently delete a generated report artifact from Aria Operations. Removes only the generated report instance and its downloadable output — the report definition and any schedules remain intact; re-run generate_report to recreate it. Deletion is irreversible and is recorded in the local audit log (~/.vmware/audit.db). Returns an error if the report_id does not exist; use list_reports to find valid UUIDs first.
 
     Args:
-        report_id: The report UUID to delete.
+        report_id: The report UUID to delete (from generate_report or list_reports).
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
