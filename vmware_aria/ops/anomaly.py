@@ -1,12 +1,19 @@
-"""Aria Operations anomaly detection: list anomalies and get risk badge scores.
+"""Aria Operations anomaly signals: per-resource anomaly metric and risk badge.
 
-All API responses pass through sanitize() to strip control characters and limit length.
+2026-06-08 spec audit: the suite-api has NO anomaly listing endpoints —
+the previously used /anomalies and /resources/{id}/anomalies paths never
+existed (the UI's "anomalous metrics" view is not part of the public API),
+and /resources/{id}/badge/* endpoints don't exist either. The real signals
+are the "System Attributes|anomaly" metric (active-anomaly count per
+resource) and the badges[] array on the ResourceDto.
+
+All API responses pass through sanitize() to strip control characters.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from vmware_policy import sanitize
 
@@ -14,6 +21,8 @@ if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
 
 _log = logging.getLogger("vmware-aria.ops.anomaly")
+
+_ANOMALY_STAT_KEY = "System Attributes|anomaly"
 
 
 # ---------------------------------------------------------------------------
@@ -26,47 +35,65 @@ def list_anomalies(
     resource_id: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    """List anomalies detected by Aria Operations.
+    """Report per-resource anomaly counts from the System Attributes metric.
 
-    If resource_id is provided, returns anomalies scoped to that resource.
-    Otherwise returns global anomalies across all monitored resources.
+    The public suite-api does not expose the UI's anomalous-metrics list;
+    the available signal is the "System Attributes|anomaly" metric (count of
+    currently anomalous metrics per resource). With resource_id, returns the
+    count for that resource; without it, scans up to ``limit`` VirtualMachine
+    resources and returns those with a non-zero anomaly count, sorted
+    descending. For root-cause detail, follow up with get_alert/list_alerts.
 
     Args:
         client: Authenticated Aria Operations API client.
         resource_id: Optional resource UUID to scope the query.
-        limit: Maximum number of anomalies to return (1–200).
+        limit: Maximum number of resources to scan when listing (1–100).
 
     Returns:
-        List of anomaly dicts with metric, deviation, and resource info.
+        List of dicts with resource id, name, and anomaly_count (latest value;
+        None when the metric has no data for the resource).
     """
-    limit = max(1, min(limit, 200))
-    params: dict[str, Any] = {"pageSize": limit}
+    limit = max(1, min(limit, 100))
 
     if resource_id:
-        path = f"/resources/{resource_id}/anomalies"
+        targets = {resource_id: ""}
     else:
-        path = "/anomalies"
-
-    data = client.get(path, params=params)
-    items = data.get("anomalies", [])
-
-    return [
-        {
-            "id": sanitize(a.get("anomalyId", "")),
-            "resource_id": sanitize(a.get("resourceId", "")),
-            "resource_name": sanitize(a.get("resourceName", ""), max_len=300),
-            "metric_key": sanitize(a.get("metricKey", "")),
-            "anomaly_type": sanitize(a.get("anomalyType", "")),
-            "start_time_ms": a.get("startTimeUTC", None),
-            "end_time_ms": a.get("endTimeUTC", None),
-            "observed_value": a.get("observedValue", None),
-            "expected_value": a.get("expectedValue", None),
-            "deviation": a.get("deviation", None),
-            "severity": sanitize(a.get("severity", "")),
-            "description": sanitize(a.get("description", ""), max_len=500),
+        listing = client.get(
+            "/resources", params={"resourceKind": "VirtualMachine", "pageSize": limit}
+        )
+        targets = {
+            r.get("identifier", ""): sanitize(r.get("resourceKey", {}).get("name", ""))
+            for r in listing.get("resourceList", [])
         }
-        for a in items
-    ]
+
+    results = []
+    for rid, name in targets.items():
+        if not rid:
+            continue
+        data = client.get(
+            f"/resources/{rid}/stats/latest", params={"statKey": _ANOMALY_STAT_KEY}
+        )
+        count = None
+        for value_entry in data.get("values", []):
+            stat_container = value_entry.get("stat-list") or value_entry.get("statList") or {}
+            for stat in stat_container.get("stat", []):
+                points = stat.get("data", [])
+                if points:
+                    count = points[-1]
+        results.append(
+            {
+                "resource_id": sanitize(rid),
+                "resource_name": name,
+                "anomaly_count": count,
+                "metric_key": _ANOMALY_STAT_KEY,
+            }
+        )
+
+    if resource_id:
+        return results
+    flagged = [r for r in results if r["anomaly_count"]]
+    flagged.sort(key=lambda r: r["anomaly_count"] or 0, reverse=True)
+    return flagged
 
 
 # ---------------------------------------------------------------------------
@@ -75,33 +102,31 @@ def list_anomalies(
 
 
 def get_resource_riskbadge(client: AriaClient, resource_id: str) -> dict:
-    """Get the risk badge score and breakdown for a resource.
+    """Get the risk badge score for a resource.
 
     The risk badge reflects the likelihood of a future performance or
-    availability problem, scored 0–100 (higher = more risk).
+    availability problem, scored 0–100 (higher = more risk; -1 = unknown).
+    Badges come from the badges[] array on the ResourceDto — there is no
+    /badge/risk endpoint in the suite-api.
 
     Args:
         client: Authenticated Aria Operations API client.
         resource_id: The resource UUID.
 
     Returns:
-        Dict with overall risk score, color, and contributing risk factors.
+        Dict with risk score and color. For contributing causes, inspect the
+        resource's active alerts via list_alerts(resource_id=...).
     """
     if not resource_id:
         raise ValueError("resource_id must not be empty")
 
-    data = client.get(f"/resources/{resource_id}/badge/risk")
+    data = client.get(f"/resources/{resource_id}")
+    risk = next(
+        (b for b in data.get("badges", []) if b.get("type") == "RISK"),
+        {},
+    )
     return {
         "resource_id": resource_id,
-        "risk_score": data.get("score", None),
-        "risk_color": sanitize(data.get("color", "")),
-        "risk_description": sanitize(data.get("description", ""), max_len=500),
-        "contributing_causes": [
-            {
-                "metric": sanitize(c.get("metric", "")),
-                "cause": sanitize(c.get("cause", ""), max_len=300),
-                "score": c.get("score", None),
-            }
-            for c in data.get("causes", [])
-        ],
+        "risk_score": risk.get("score", None),
+        "risk_color": sanitize(risk.get("color", "")),
     }

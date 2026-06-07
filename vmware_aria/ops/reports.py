@@ -79,8 +79,10 @@ def generate_report(
     Args:
         client: Authenticated Aria Operations API client.
         definition_id: Report definition (template) UUID.
-        resource_ids: Optional list of resource UUIDs to scope the report.
-            If omitted, the report runs against all resources in the template scope.
+        resource_ids: Resource UUIDs the report is generated against. The
+            suite-api requires exactly one root resource per report — the
+            first ID is used; pass the cluster/datacenter UUID to cover its
+            children. Required (find IDs via list_resources).
         audit_logger: Optional audit logger.
         target_name: Target name for audit log.
 
@@ -89,10 +91,28 @@ def generate_report(
     """
     if not definition_id:
         raise ValueError("definition_id must not be empty")
+    if not resource_ids:
+        raise ValueError(
+            "resource_ids must contain at least one resource UUID — the Report "
+            "creation API requires a root resourceId. Use list_resources() to "
+            "find one (e.g. the target cluster or datacenter)."
+        )
+    if len(resource_ids) > 1:
+        _log.warning(
+            "Report API accepts a single root resource; using '%s' and ignoring %d more",
+            resource_ids[0],
+            len(resource_ids) - 1,
+        )
 
-    payload: dict = {"reportDefinition": {"id": definition_id}}
-    if resource_ids:
-        payload["subject"] = {"resources": [{"resourceId": rid} for rid in resource_ids]}
+    # Correct Report creation body (2026-06-08 user report — the old
+    # {"reportDefinition": {"id": ...}} nesting is not in the spec):
+    # flat reportDefinitionId + resourceId strings.
+    payload: dict = {
+        "id": None,
+        "resourceId": resource_ids[0],
+        "reportDefinitionId": definition_id,
+        "subject": [],
+    }
 
     data = client.post("/reports", json_data=payload)
     report_id = sanitize(data.get("id", ""))
@@ -138,12 +158,13 @@ def list_reports(
         List of report summary dicts with id, name, status, generation_time.
     """
     limit = max(1, min(limit, 200))
-    params: dict = {"pageSize": limit}
-    if definition_id:
-        params["reportDefinitionId"] = definition_id
-
-    data = client.get("/reports", params=params)
+    # GET /reports supports name/resourceId/status/subject only — there is no
+    # reportDefinitionId query param (2026-06-08 user report); filter
+    # client-side on the response field instead.
+    data = client.get("/reports", params={"pageSize": limit})
     items = data.get("reports", [])
+    if definition_id:
+        items = [r for r in items if r.get("reportDefinitionId") == definition_id]
 
     return [
         {
@@ -184,8 +205,10 @@ def get_report(
     data = client.get(f"/reports/{report_id}")
     base_url = client._base_url  # e.g. https://aria-host:443/suite-api/api
 
-    download_url = f"{base_url}/reports/{report_id}/download?format=pdf"
-    csv_url = f"{base_url}/reports/{report_id}/download?format=csv"
+    # `format` is a documented param; values per spec are PDF and CSV
+    # (default PDF). Uppercase matches the documented literals.
+    download_url = f"{base_url}/reports/{report_id}/download?format=PDF"
+    csv_url = f"{base_url}/reports/{report_id}/download?format=CSV"
 
     return {
         "id": sanitize(data.get("id", "")),

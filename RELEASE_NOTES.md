@@ -1,3 +1,43 @@
+## v1.5.31 (2026-06-08) — API layer rewritten against the official suite-api spec
+
+An external user ran the MCP against a real Aria Operations instance and reported
+that roughly half the API calls returned 404. They were right. Every claim was
+verified against the official Broadcom/VMware suite-api specification (vROps 8.6
+operation index + official sample payloads + VMware's own client code); 12 of
+their 14 findings were confirmed, 2 were already spec-correct, and our own audit
+found 6 more invented endpoints they hadn't hit yet. Sincere thanks to the reporter.
+
+### Fixed — confirmed user findings (one line per reported bug)
+1. `get_resource_metrics`: `statKey` now sent as an array of plain strings (was `[{key: ...}]` objects).
+2. `get_resource_metrics`: response parsing now traverses `values[].stat-list.stat[]` (was reading non-existent top-level fields, so results were always empty).
+3. `get_resource_metrics`: request field renamed `intervalQuantity` → `intervalQuantifier` per StatQuery model.
+4. `get_top_consumers`: now uses real `GET /api/resources/stats/topn` (was POSTing to invented `/resources/query/topn`); resolves resource IDs by kind first since the endpoint has no resourceKind param.
+5. `list_alerts`: filtering now goes through `POST /api/alerts/query` (AlertQuery: `activeOnly`, `alertCriticality`, `resource-query`) — `status`/`criticality` were never valid GET params and were silently ignored.
+6. `acknowledge_alert`: now `POST /api/alerts?action=takeownership` with `{uuids:[...]}` — the spec has no acknowledge action; takeownership (control state ASSIGNED) is the semantic equivalent and is documented as such.
+7. `cancel_alert`: now `POST /api/alerts?action=cancel` with `{uuids:[...]}` (was DELETE `/alerts/{id}`, which doesn't exist).
+8. `set_alert_definition_state`: now PUT `/api/alertdefinitions/{id}/enable|disable` (was POST).
+10. `generate_report`: correct flat creation body `{id, resourceId, reportDefinitionId, subject:[]}` (was invented `{"reportDefinition":{"id"}}` nesting); a root `resource_id` is now required with a teaching error when missing.
+11. `list_reports`: `reportDefinitionId` is not a valid GET param — definition filtering is now client-side.
+13. `get_aria_health`: reads the real NodeStatus `status` field, returns ONLINE/OFFLINE + healthy bool (was reporting `clusterVipAddress` — an IP address — as the status; the `services[]` array it also "parsed" doesn't exist).
+14. Token handling: `validity` in the acquire response is an epoch-ms expiry timestamp with 6-hour sliding validity — the old code treated it as a duration, scheduling refresh ~56 years out, so sessions idle past 6h died with 401. README's "30 minutes" claim fixed too.
+
+### Not changed — user findings that were already spec-correct
+9. `create_alert_definition` keeps the `base-symptom-set` wire key — the Broadcom portal's model page names the property "symptoms", but the live server JSON uses `base-symptom-set` (verified against VMware's own build-tools client and official sample payloads). The invalid `relation: "ANY"` value WAS fixed (→ `SELF`, with `aggregation`/`symptomSetOperator` expressing any-of semantics).
+12. `get_report` download URLs keep the `format` param — it is documented (PDF/CSV, default PDF); literals upper-cased to match the doc.
+
+### Fixed — additional invented endpoints found during the audit (would also 404)
+- `get_resource_health` / `get_resource_riskbadge`: `/resources/{id}/badge/health|risk` don't exist — badges now read from the `badges[]` array on `GET /resources/{id}`.
+- `get_capacity_overview` / `get_remaining_capacity` / `get_time_remaining`: `/resources/{id}/recommendations|remainingcapacity|timeremaining` don't exist — reimplemented on the real `OnlineCapacityAnalytics|*` metrics via `GET /resources/{id}/stats/latest`.
+- `list_rightsizing_recommendations`: `/recommendations/rightsizing` doesn't exist (`/api/recommendations` is alert-recommendation text CRUD) — reimplemented on `OnlineCapacityAnalytics|{cpu,mem}|demand|recommendedSize` metrics.
+- `list_anomalies`: `/anomalies` and `/resources/{id}/anomalies` don't exist (the UI's anomalous-metrics view is not in the public API) — reimplemented on the `System Attributes|anomaly` metric (per-resource anomaly counts).
+
+### Tests
+- New `tests/eval/regression/test_aria_spec_conformance.py`: AST-scans every API call in the codebase and asserts it exists in the official vROps 8.6 operation index (315 operations, stored at `tests/eval/spec/vrops86_operations.json`). Invented endpoints now fail CI instead of 404-ing in production.
+- New `tests/eval/regression/test_aria_specific.py`: 13 per-bug regression tests pinning correct request/response shapes with a mocked client.
+
+### Known limitation
+- Return shapes of the reimplemented capacity/anomaly/health tools changed (they previously parsed fields that never existed). Capacity analytics metrics need the product's analytics cycle to warm up; values are None until then.
+
 ## v1.5.30 (2026-06-07) — Tool description quality (Glama TDQS)
 
 ### Improved

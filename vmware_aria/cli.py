@@ -383,22 +383,16 @@ def capacity_rightsizing(
     client, _ = _get_connection(target, config)
     items = list_rightsizing_recommendations(client, resource_id=resource_id, limit=limit)
 
-    table = Table(title="Rightsizing Recommendations", show_lines=False)
+    table = Table(title="Rightsizing (OnlineCapacityAnalytics recommendedSize)", show_lines=False)
     table.add_column("VM Name", style="bold")
-    table.add_column("Type")
-    table.add_column("Current CPU")
-    table.add_column("Rec CPU")
-    table.add_column("Current Mem MB")
-    table.add_column("Rec Mem MB")
+    table.add_column("Recommended CPU")
+    table.add_column("Recommended Mem")
 
     for r in items:
         table.add_row(
-            r["resource_name"][:40],
-            r["recommendation_type"],
-            str(r.get("current_cpu_count", "")),
-            str(r.get("recommended_cpu_count", "")),
-            str(r.get("current_memory_mb", "")),
-            str(r.get("recommended_memory_mb", "")),
+            (r["name"] or r["id"])[:40],
+            str(r.get("recommended_cpu", "")),
+            str(r.get("recommended_memory", "")),
         )
 
     console.print(table)
@@ -422,20 +416,14 @@ def anomaly_list(
     client, _ = _get_connection(target, config)
     items = list_anomalies(client, resource_id=resource_id, limit=limit)
 
-    table = Table(title="Anomalies", show_lines=False)
+    table = Table(title="Anomaly Counts (System Attributes|anomaly)", show_lines=False)
     table.add_column("Resource", style="bold")
-    table.add_column("Metric")
-    table.add_column("Severity")
-    table.add_column("Observed")
-    table.add_column("Expected")
+    table.add_column("Anomaly Count")
 
     for a in items:
         table.add_row(
-            a["resource_name"][:40],
-            a["metric_key"],
-            a["severity"],
-            str(a.get("observed_value", "")),
-            str(a.get("expected_value", "")),
+            (a["resource_name"] or a["resource_id"])[:40],
+            str(a.get("anomaly_count", "")),
         )
 
     console.print(table)
@@ -470,18 +458,10 @@ def health_status(
     client, _ = _get_connection(target, config)
     data = get_aria_health(client)
 
-    overall = "[green]HEALTHY[/green]" if data["all_services_healthy"] else "[red]DEGRADED[/red]"
+    overall = "[green]ONLINE[/green]" if data["healthy"] else f"[red]{data['overall_status'] or 'OFFLINE'}[/red]"
     console.print(f"\nAria Operations Platform: {overall}")
-    console.print(f"Services: {data['service_count']} total, {len(data['unhealthy_services'])} unhealthy\n")
-
-    if data["unhealthy_services"]:
-        table = Table(title="Unhealthy Services", show_lines=False)
-        table.add_column("Service", style="bold")
-        table.add_column("Status")
-        table.add_column("Message")
-        for s in data["unhealthy_services"]:
-            table.add_row(s["name"], s["status"], s.get("message", ""))
-        console.print(table)
+    if data.get("details"):
+        console.print(f"Details: {data['details']}")
 
 
 @health_app.command("collectors")

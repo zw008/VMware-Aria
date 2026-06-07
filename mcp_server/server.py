@@ -175,7 +175,10 @@ def get_resource_metrics(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_resource_health(resource_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get the health badge score for a resource (0–100, higher is healthier).
+    """[READ] Get the health, risk, and efficiency badge scores for a resource.
+
+    Badges come from the resource's badges[] array. Scores are 0–100
+    (higher = healthier for HEALTH; -1 = unknown) with a color per badge.
 
     Args:
         resource_id: The resource UUID.
@@ -265,10 +268,11 @@ def get_alert(alert_id: str, target: Optional[str] = None) -> dict:
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def acknowledge_alert(alert_id: str, confirmed: bool = False, target: Optional[str] = None) -> dict:
-    """[WRITE] Acknowledge an active alert (marks it as seen, does not cancel it).
+    """[WRITE] Acknowledge an active alert by taking ownership (does not cancel it).
 
-    This is a WRITE operation — it changes the alert's control state to ACKNOWLEDGED.
-    The alert remains active and will still fire notifications until cancelled.
+    The suite-api has no dedicated "acknowledge" action; this maps to
+    POST /alerts?action=takeownership, assigning the alert to the API user
+    (control state ASSIGNED). The alert remains active until cancelled.
     Default confirmed=False returns a preview without making any change.
 
     Args:
@@ -356,7 +360,7 @@ def list_alert_definitions(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get Aria Operations capacity recommendations for a cluster — suggested optimization actions with reasoning and impact. Returns recommendation_count plus a list of recommendations, each with id, type, description, impact, and reasoning. Start here when assessing overall cluster capacity health; for numeric headroom per dimension use get_remaining_capacity, and for projected exhaustion dates use get_time_remaining.
+    """[READ] Get a capacity overview for a cluster — remaining-capacity percentage and projected days-until-full per dimension (cpu/mem/diskspace), from the OnlineCapacityAnalytics metrics. Values are None while capacity analytics are still warming up on a fresh instance. Start here when assessing overall cluster capacity health; for absolute headroom values use get_remaining_capacity, and for just the exhaustion projections use get_time_remaining.
 
     Args:
         cluster_id: The cluster resource UUID (ClusterComputeResource, from list_resources).
@@ -373,7 +377,7 @@ def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_remaining_capacity(resource_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get remaining capacity headroom for a cluster or host — how much more workload fits before hitting limits. Returns one entry per capacity dimension (CPU, memory, disk, network), each with metric name, remaining_value, unit (varies per metric, e.g. MHz or KB), usable_capacity, used_capacity, and current demand. Use this for numeric headroom; use get_capacity_overview for optimization recommendations, or get_time_remaining for projected days-until-full.
+    """[READ] Get remaining capacity headroom for a cluster or host — how much more workload fits before hitting limits. Returns one entry per capacity dimension (cpu, mem, diskspace), each with remaining_value (absolute, unit per dimension e.g. MHz/KB) and remaining_pct, from the OnlineCapacityAnalytics demand model. Values are None while capacity analytics warm up. Use get_capacity_overview for the combined percentage+days view, or get_time_remaining for projected days-until-full.
 
     Args:
         resource_id: The resource UUID — a ClusterComputeResource or HostSystem (from list_resources).
@@ -413,14 +417,17 @@ def list_rightsizing_recommendations(
     limit: int = 50,
     target: Optional[str] = None,
 ) -> list[dict]:
-    """[READ] List VM rightsizing recommendations to reduce waste or improve performance.
+    """[READ] List VM rightsizing data — recommended CPU/memory size per VM.
 
-    Identifies over-provisioned VMs (reclaim CPU/memory) and under-provisioned VMs
-    (add resources to prevent performance degradation).
+    Reads the OnlineCapacityAnalytics recommendedSize metrics (the public
+    API's rightsizing signal; the UI Rightsize page uses internal APIs).
+    Compare against the VM's provisioned size to find over/under-provisioning.
+    Values are None while capacity analytics warm up. One stats call per VM —
+    keep limit modest.
 
     Args:
         resource_id: Optional VM resource UUID to scope to a single VM.
-        limit: Maximum recommendations to return (1–200). Default 50.
+        limit: Maximum VMs to evaluate when listing (1–100). Default 50.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
@@ -443,13 +450,18 @@ def list_anomalies(
     limit: int = 50,
     target: Optional[str] = None,
 ) -> list[dict]:
-    """[READ] List anomalies detected by Aria Operations machine learning models.
+    """[READ] Report per-resource anomaly counts (System Attributes|anomaly metric).
 
-    Anomalies are metric deviations that exceed expected behavioral patterns.
+    The public suite-api does not expose the UI's anomalous-metrics list; this
+    returns the count of currently anomalous metrics per resource. With
+    resource_id: that resource's count. Without: scans up to `limit` VMs and
+    returns those with non-zero counts, sorted descending. For root cause,
+    follow up with list_alerts(resource_id=...). One stats call per VM when
+    listing — keep limit modest.
 
     Args:
         resource_id: Optional resource UUID to scope to a single resource.
-        limit: Maximum anomalies to return (1–200). Default 50.
+        limit: Maximum VMs to scan when listing (1–100). Default 50.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:
@@ -488,11 +500,13 @@ def get_resource_riskbadge(resource_id: str, target: Optional[str] = None) -> di
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_aria_health(target: Optional[str] = None) -> dict:
-    """[READ] Check Aria Operations platform health: all internal services and node status.
+    """[READ] Check Aria Operations platform node status (ONLINE/OFFLINE).
 
-    Returns overall platform health, individual service states, and node information.
-    Use this to verify Aria Operations is functioning correctly before investigating
-    potential monitoring blind spots.
+    Returns overall_status ("ONLINE" when all internal services run, else
+    "OFFLINE" — the endpoint itself answers 503 when offline), healthy bool,
+    system_time_ms, and details. Use this to verify Aria Operations is
+    functioning before investigating monitoring blind spots; per-service
+    breakdown is not exposed by the public API.
 
     Args:
         target: Optional Aria Operations target name from config. Uses default if omitted.
@@ -694,8 +708,10 @@ def generate_report(
 
     Args:
         definition_id: Report definition (template) UUID from list_report_definitions.
-        resource_ids: Optional list of resource UUIDs to scope the report.
-            If omitted, the report runs against all resources in the template scope.
+        resource_ids: REQUIRED — at least one resource UUID. The Report API
+            generates against a single root resource (first ID is used); pass
+            a cluster/datacenter UUID to cover its children. Find IDs via
+            list_resources.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
     try:

@@ -110,12 +110,12 @@ Aria Operations 使用 **OpsToken** 认证：
 ```
 POST /suite-api/api/auth/token/acquire
 Body: {"username": "admin", "password": "...", "authSource": "LOCAL"}
-响应: {"token": "abc123", "validity": 1800000}
+响应: {"token": "abc123", "validity": 1765182896000}
 
 后续请求 Header: Authorization: OpsToken abc123
 ```
 
-Token 有效期 30 分钟，到期前 60 秒自动刷新。
+Token 为 6 小时滑动有效期（每次调用自动延长，官方规范行为），客户端在到期前 60 秒自动重新获取。响应中的 `validity` 字段是到期时间戳（epoch 毫秒），不是时长。
 
 ## 密码命名规则
 

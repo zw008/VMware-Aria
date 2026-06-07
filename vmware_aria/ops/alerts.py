@@ -51,15 +51,19 @@ def list_alerts(
         )
 
     limit = max(1, min(limit, 500))
-    params: dict[str, Any] = {"pageSize": limit}
-    if active_only:
-        params["status"] = "ACTIVE"
-    if criticality:
-        params["criticality"] = criticality.upper()
-    if resource_id:
-        params["resourceId"] = resource_id
 
-    data = client.get("/alerts", params=params)
+    # GET /alerts only supports id/resourceId/page/pageSize — status and
+    # criticality params were silently ignored (2026-06-08 user report).
+    # Server-side filtering goes through POST /alerts/query (AlertQuery).
+    query: dict[str, Any] = {"compositeOperator": "AND"}
+    if active_only:
+        query["activeOnly"] = True
+    if criticality:
+        query["alertCriticality"] = [criticality.upper()]
+    if resource_id:
+        query["resource-query"] = {"resourceId": [resource_id]}
+
+    data = client.post("/alerts/query", json_data=query, params={"pageSize": limit})
     items = data.get("alerts", [])
 
     return [
@@ -142,16 +146,21 @@ def acknowledge_alert(
     audit_logger: AuditLogger | None = None,
     target_name: str = "default",
 ) -> dict:
-    """Acknowledge an active alert (sets control state to ACKNOWLEDGED).
+    """Acknowledge an active alert by taking ownership of it.
+
+    The suite-api has no dedicated "acknowledge" operation (2026-06-08 user
+    report — POST /alerts/{id}/acknowledge does not exist). The closest
+    semantic equivalent is POST /alerts?action=takeownership, which assigns
+    the alert to the calling user (control state ASSIGNED).
 
     Args:
         client: Authenticated Aria Operations API client.
-        alert_id: The alert UUID to acknowledge.
+        alert_id: The alert UUID to acknowledge (take ownership of).
         audit_logger: Optional audit logger; operation is logged if provided.
         target_name: Target name for audit log record.
 
     Returns:
-        Dict confirming the acknowledgement with alert id and new control_state.
+        Dict confirming the operation with alert id and new control_state.
     """
     if not alert_id:
         raise ValueError("alert_id must not be empty")
@@ -163,12 +172,12 @@ def acknowledge_alert(
     except Exception as exc:
         _log.warning("Could not retrieve before-state for alert %s: %s", alert_id, exc)
 
-    client.post(f"/alerts/{alert_id}/acknowledge")
+    client.post("/alerts", json_data={"uuids": [alert_id]}, params={"action": "takeownership"})
 
     result = {
         "alert_id": alert_id,
-        "action": "acknowledged",
-        "control_state": "ACKNOWLEDGED",
+        "action": "takeownership",
+        "control_state": "ASSIGNED",
     }
 
     if audit_logger:
@@ -217,7 +226,9 @@ def cancel_alert(
     except Exception as exc:
         _log.warning("Could not retrieve before-state for alert %s: %s", alert_id, exc)
 
-    client.delete(f"/alerts/{alert_id}")
+    # DELETE /alerts/{id} does not exist (2026-06-08 user report). Cancelling
+    # goes through POST /alerts?action=cancel with a uuids body.
+    client.post("/alerts", json_data={"uuids": [alert_id]}, params={"action": "cancel"})
 
     result = {
         "alert_id": alert_id,
@@ -337,12 +348,19 @@ def create_alert_definition(
         "description": description,
         "adapterKindKey": adapter_kind,
         "resourceKindKey": resource_kind,
+        # "base-symptom-set" is the correct wire key (the Broadcom portal's
+        # model page calls the property "symptoms", but the live server JSON
+        # uses base-symptom-set — verified against VMware's own client code).
+        # relation must be SELF; "any symptom triggers" is expressed via
+        # aggregation/symptomSetOperator.
         "states": [
             {
                 "severity": criticality,
                 "base-symptom-set": {
                     "type": "SYMPTOM_SET",
-                    "relation": "ANY",
+                    "relation": "SELF",
+                    "aggregation": "ANY",
+                    "symptomSetOperator": "OR",
                     "symptomDefinitionIds": symptom_definition_ids,
                 },
             }
@@ -397,8 +415,12 @@ def set_alert_definition_state(
     if not definition_id:
         raise ValueError("definition_id must not be empty")
 
+    # PUT, not POST (2026-06-08 user report; endpoints exist in 8.6+).
+    if enabled:
+        client.put(f"/alertdefinitions/{definition_id}/enable")
+    else:
+        client.put(f"/alertdefinitions/{definition_id}/disable")
     action_path = "enable" if enabled else "disable"
-    client.post(f"/alertdefinitions/{definition_id}/{action_path}")
 
     result = {
         "definition_id": definition_id,

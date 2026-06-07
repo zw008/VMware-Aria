@@ -175,27 +175,34 @@ def get_resource_metrics(
     if begin_time_ms is None:
         begin_time_ms = end_time_ms - 3_600_000  # 1 hour
 
+    # Per StatQuery spec: statKey is an array of plain strings, and the
+    # interval count field is `intervalQuantifier` (2026-06-08 user report:
+    # we sent [{"key": ...}] objects and `intervalQuantity`, both rejected).
     payload: dict[str, Any] = {
         "resourceId": [resource_id],
-        "statKey": [{"key": k} for k in metric_keys],
+        "statKey": list(metric_keys),
         "begin": begin_time_ms,
         "end": end_time_ms,
         "rollUpType": rollup_type.upper(),
         "intervalType": interval_type.upper(),
-        "intervalQuantity": interval_quantity,
+        "intervalQuantifier": interval_quantity,
     }
 
     data = client.post(f"/resources/{resource_id}/stats/query", json_data=payload)
 
+    # Response nests stats under values[].stat-list.stat[] (hyphenated wire
+    # key; some renderings show statList — parse both defensively).
     result: dict[str, list[dict]] = {}
-    for stat_list in data.get("values", []):
-        key = sanitize(stat_list.get("statKey", {}).get("key", ""))
-        timestamps = stat_list.get("timestamps", [])
-        values = stat_list.get("data", [])
-        result[key] = [
-            {"timestamp_ms": ts, "value": v}
-            for ts, v in zip(timestamps, values)
-        ]
+    for value_entry in data.get("values", []):
+        stat_container = value_entry.get("stat-list") or value_entry.get("statList") or {}
+        for stat in stat_container.get("stat", []):
+            key = sanitize(stat.get("statKey", {}).get("key", ""))
+            timestamps = stat.get("timestamps", [])
+            values = stat.get("data", [])
+            result[key] = [
+                {"timestamp_ms": ts, "value": v}
+                for ts, v in zip(timestamps, values)
+            ]
     return result
 
 
@@ -217,13 +224,26 @@ def get_resource_health(client: AriaClient, resource_id: str) -> dict:
     if not resource_id:
         raise ValueError("resource_id must not be empty")
 
-    data = client.get(f"/resources/{resource_id}/badge/health")
+    # suite-api has no /resources/{id}/badge/* endpoints — badges come back
+    # as the badges[] array on the ResourceDto (2026-06-08 spec audit).
+    data = client.get(f"/resources/{resource_id}")
+    badges = {b.get("type", ""): b for b in data.get("badges", [])}
+
+    def _badge(kind: str) -> dict:
+        b = badges.get(kind, {})
+        return {"score": b.get("score", None), "color": sanitize(b.get("color", ""))}
+
+    health = _badge("HEALTH")
+    risk = _badge("RISK")
+    efficiency = _badge("EFFICIENCY")
     return {
         "resource_id": resource_id,
-        "health_score": data.get("score", None),
-        "health_color": sanitize(data.get("color", "")),
-        "health_description": sanitize(data.get("description", ""), max_len=500),
-        "health_degraded_by": sanitize(data.get("degradedBy", ""), max_len=500),
+        "health_score": health["score"],
+        "health_color": health["color"],
+        "risk_score": risk["score"],
+        "risk_color": risk["color"],
+        "efficiency_score": efficiency["score"],
+        "efficiency_color": efficiency["color"],
     }
 
 
@@ -251,26 +271,52 @@ def get_top_consumers(
     """
     top_n = max(1, min(top_n, 50))
 
-    payload: dict[str, Any] = {
-        "resourceKind": resource_kind,
-        "statKey": metric_key,
-        "maxResults": top_n,
-        "rollupType": "AVG",
-        "intervalType": "MINUTES",
-        "intervalQuantity": 5,
+    # POST /resources/query/topn does not exist in the suite-api (2026-06-08
+    # user report). The real endpoint is GET /resources/stats/topn, which has
+    # no resourceKind parameter — resolve candidate resource IDs first, then
+    # rank them.
+    listing = client.get(
+        "/resources", params={"resourceKind": resource_kind, "pageSize": 200}
+    )
+    candidates = listing.get("resourceList", [])
+    if not candidates:
+        return []
+    names = {
+        r.get("identifier", ""): sanitize(r.get("resourceKey", {}).get("name", ""))
+        for r in candidates
     }
 
-    data = client.post("/resources/query/topn", json_data=payload)
+    import time as _time
+
+    end_ms = int(_time.time() * 1000)
+    params: dict[str, Any] = {
+        "resourceId": list(names.keys()),
+        "statKey": metric_key,
+        "topN": top_n,
+        "begin": end_ms - 3_600_000,
+        "end": end_ms,
+        "rollUpType": "AVG",
+        "intervalType": "MINUTES",
+        "intervalQuantifier": 5,
+        "sortOrder": "DESCENDING",
+        "groupBy": "RESOURCE",
+    }
+    data = client.get("/resources/stats/topn", params=params)
 
     results = []
-    for item in data.get("resourceList", []):
+    for group in data.get("resourceStatGroups", []):
+        rid = group.get("groupKey", "")
+        latest_value = None
+        for stat in group.get("resourceStats", []):
+            points = stat.get("data", [])
+            if points:
+                latest_value = points[-1]
         results.append(
             {
-                "id": sanitize(item.get("identifier", "")),
-                "name": sanitize(item.get("resourceKey", {}).get("name", "")),
+                "id": sanitize(rid),
+                "name": names.get(rid, ""),
                 "metric_key": metric_key,
-                "value": item.get("dtValue", None),
-                "unit": sanitize(item.get("unit", "")),
+                "value": latest_value,
             }
         )
-    return results
+    return results[:top_n]

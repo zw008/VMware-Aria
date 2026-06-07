@@ -1,6 +1,13 @@
 """Aria Operations capacity planning: overview, remaining capacity, time remaining, rightsizing.
 
-All API responses pass through sanitize() to strip control characters and limit length.
+2026-06-08 spec audit: the suite-api has NO dedicated capacity endpoints —
+the previously used /resources/{id}/recommendations, /remainingcapacity and
+/timeremaining paths never existed and returned 404 against real instances.
+Capacity analytics are delivered exclusively as metrics through the stats
+endpoints, under the ``OnlineCapacityAnalytics|*`` statKey family
+(per-dimension: cpu / mem / diskspace, each with demand/alloc variants).
+
+All API responses pass through sanitize() to strip control characters.
 """
 
 from __future__ import annotations
@@ -15,6 +22,29 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger("vmware-aria.ops.capacity")
 
+_CAPACITY_DIMENSIONS = ("cpu", "mem", "diskspace")
+
+
+def _latest_stats(client: AriaClient, resource_id: str, stat_keys: list[str]) -> dict[str, float | None]:
+    """Fetch the latest value for each statKey via GET /resources/{id}/stats/latest.
+
+    Returns a dict statKey -> latest value (None when the metric has no data,
+    e.g. capacity analytics still warming up on a fresh resource).
+    """
+    data = client.get(
+        f"/resources/{resource_id}/stats/latest",
+        params={"statKey": stat_keys},
+    )
+    values: dict[str, float | None] = {k: None for k in stat_keys}
+    for value_entry in data.get("values", []):
+        stat_container = value_entry.get("stat-list") or value_entry.get("statList") or {}
+        for stat in stat_container.get("stat", []):
+            key = stat.get("statKey", {}).get("key", "")
+            points = stat.get("data", [])
+            if key in values and points:
+                values[key] = points[-1]
+    return values
+
 
 # ---------------------------------------------------------------------------
 # get_capacity_overview
@@ -22,34 +52,39 @@ _log = logging.getLogger("vmware-aria.ops.capacity")
 
 
 def get_capacity_overview(client: AriaClient, cluster_id: str) -> dict:
-    """Get capacity recommendations and utilization overview for a cluster.
+    """Get a capacity utilization overview for a cluster (remaining % + days left).
+
+    Combines remaining-capacity percentage and time-remaining projections per
+    dimension (cpu/mem/diskspace) from the OnlineCapacityAnalytics metrics.
 
     Args:
         client: Authenticated Aria Operations API client.
         cluster_id: The cluster resource UUID.
 
     Returns:
-        Dict with capacity recommendations, demand, and waste metrics.
+        Dict with per-dimension remaining_pct and time_remaining_days.
+        Values are None when capacity analytics have no data yet.
     """
     if not cluster_id:
         raise ValueError("cluster_id must not be empty")
 
-    data = client.get(f"/resources/{cluster_id}/recommendations")
-    recs = data.get("recommendation", [])
-    return {
-        "resource_id": cluster_id,
-        "recommendation_count": len(recs),
-        "recommendations": [
+    stat_keys = [
+        f"OnlineCapacityAnalytics|{dim}|demand|{metric}"
+        for dim in _CAPACITY_DIMENSIONS
+        for metric in ("capacityRemainingPercentage", "timeRemaining")
+    ]
+    values = _latest_stats(client, cluster_id, stat_keys)
+
+    dimensions = []
+    for dim in _CAPACITY_DIMENSIONS:
+        dimensions.append(
             {
-                "id": sanitize(r.get("recommendationId", "")),
-                "type": sanitize(r.get("type", "")),
-                "description": sanitize(r.get("description", ""), max_len=1000),
-                "impact": sanitize(r.get("impact", "")),
-                "reasoning": sanitize(r.get("reasoning", ""), max_len=1000),
+                "dimension": dim,
+                "remaining_pct": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemainingPercentage"],
+                "time_remaining_days": values[f"OnlineCapacityAnalytics|{dim}|demand|timeRemaining"],
             }
-            for r in recs
-        ],
-    }
+        )
+    return {"resource_id": cluster_id, "dimensions": dimensions}
 
 
 # ---------------------------------------------------------------------------
@@ -61,32 +96,36 @@ def get_remaining_capacity(client: AriaClient, resource_id: str) -> dict:
     """Get remaining capacity metrics for a resource (cluster or host).
 
     Reports how much additional workload can be added before running out of
-    CPU, memory, disk, or network capacity.
+    CPU, memory, or disk capacity, from the OnlineCapacityAnalytics demand
+    model metrics.
 
     Args:
         client: Authenticated Aria Operations API client.
         resource_id: The resource UUID (typically a ClusterComputeResource).
 
     Returns:
-        Dict with remaining capacity values per resource dimension.
+        Dict with remaining capacity (absolute + percentage) per dimension.
+        Values are None when capacity analytics have no data yet.
     """
     if not resource_id:
         raise ValueError("resource_id must not be empty")
 
-    data = client.get(f"/resources/{resource_id}/remainingcapacity")
-    capacities = data.get("remainingCapacity", [])
+    stat_keys = [
+        f"OnlineCapacityAnalytics|{dim}|demand|{metric}"
+        for dim in _CAPACITY_DIMENSIONS
+        for metric in ("capacityRemaining", "capacityRemainingPercentage")
+    ]
+    values = _latest_stats(client, resource_id, stat_keys)
+
     return {
         "resource_id": resource_id,
         "remaining_capacity": [
             {
-                "metric": sanitize(c.get("metric", "")),
-                "remaining_value": c.get("remainingValue", None),
-                "unit": sanitize(c.get("unit", "")),
-                "usable_capacity": c.get("usableCapacity", None),
-                "used_capacity": c.get("usedCapacity", None),
-                "demand": c.get("demandValue", None),
+                "dimension": dim,
+                "remaining_value": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemaining"],
+                "remaining_pct": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemainingPercentage"],
             }
-            for c in capacities
+            for dim in _CAPACITY_DIMENSIONS
         ],
     }
 
@@ -100,30 +139,33 @@ def get_time_remaining(client: AriaClient, resource_id: str) -> dict:
     """Get time-remaining-until-full predictions for a resource.
 
     Aria Operations projects when each capacity dimension (CPU, memory, disk)
-    will be exhausted based on current usage trends.
+    will be exhausted based on current usage trends. Value is in days.
 
     Args:
         client: Authenticated Aria Operations API client.
         resource_id: The resource UUID (typically a ClusterComputeResource).
 
     Returns:
-        Dict with predicted exhaustion time per capacity dimension.
+        Dict with predicted days-until-exhaustion per capacity dimension.
+        Values are None when capacity analytics have no data yet.
     """
     if not resource_id:
         raise ValueError("resource_id must not be empty")
 
-    data = client.get(f"/resources/{resource_id}/timeremaining")
-    predictions = data.get("timeRemaining", [])
+    stat_keys = [
+        f"OnlineCapacityAnalytics|{dim}|demand|timeRemaining"
+        for dim in _CAPACITY_DIMENSIONS
+    ]
+    values = _latest_stats(client, resource_id, stat_keys)
+
     return {
         "resource_id": resource_id,
         "time_remaining": [
             {
-                "metric": sanitize(p.get("metric", "")),
-                "time_remaining_days": p.get("timeRemainingInDays", None),
-                "confidence": p.get("confidence", None),
-                "projected_full_date_ms": p.get("projectedFullDate", None),
+                "dimension": dim,
+                "time_remaining_days": values[f"OnlineCapacityAnalytics|{dim}|demand|timeRemaining"],
             }
-            for p in predictions
+            for dim in _CAPACITY_DIMENSIONS
         ],
     }
 
@@ -138,39 +180,51 @@ def list_rightsizing_recommendations(
     resource_id: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    """List VM rightsizing recommendations (over-provisioned or under-provisioned).
+    """List VM rightsizing data (recommended vs provisioned size).
+
+    The suite-api exposes rightsizing exclusively as per-VM metrics
+    (OnlineCapacityAnalytics recommendedSize); the UI "Rightsize" page uses
+    internal APIs. This queries the recommended-size metrics for the given
+    VM, or for up to ``limit`` VMs when no resource_id is given.
 
     Args:
         client: Authenticated Aria Operations API client.
-        resource_id: Optional VM resource UUID to scope recommendations.
-        limit: Maximum number of recommendations to return (1–200).
+        resource_id: Optional VM resource UUID to scope the query.
+        limit: Maximum number of VMs to evaluate when listing (1–100).
 
     Returns:
-        List of rightsizing recommendation dicts with VM name, current config,
-        and recommended config changes.
+        List of dicts with VM id, name, and recommended cpu/mem sizes.
+        Values are None for VMs where capacity analytics have no data.
     """
-    limit = max(1, min(limit, 200))
-    params: dict = {"pageSize": limit}
+    limit = max(1, min(limit, 100))
+
     if resource_id:
-        params["resourceId"] = resource_id
-
-    data = client.get("/recommendations/rightsizing", params=params)
-    items = data.get("recommendations", [])
-
-    return [
-        {
-            "id": sanitize(r.get("id", "")),
-            "resource_id": sanitize(r.get("resourceId", "")),
-            "resource_name": sanitize(r.get("resourceName", ""), max_len=300),
-            "recommendation_type": sanitize(r.get("type", "")),
-            "description": sanitize(r.get("description", ""), max_len=500),
-            "current_cpu_count": r.get("currentCpuCount", None),
-            "recommended_cpu_count": r.get("recommendedCpuCount", None),
-            "current_memory_mb": r.get("currentMemoryMB", None),
-            "recommended_memory_mb": r.get("recommendedMemoryMB", None),
-            "projected_waste_cpu": r.get("projectedCpuWaste", None),
-            "projected_waste_memory_mb": r.get("projectedMemoryWasteMB", None),
-            "confidence": r.get("confidence", None),
+        targets = {resource_id: ""}
+    else:
+        listing = client.get(
+            "/resources", params={"resourceKind": "VirtualMachine", "pageSize": limit}
+        )
+        targets = {
+            r.get("identifier", ""): sanitize(r.get("resourceKey", {}).get("name", ""))
+            for r in listing.get("resourceList", [])
         }
-        for r in items
+
+    stat_keys = [
+        "OnlineCapacityAnalytics|cpu|demand|recommendedSize",
+        "OnlineCapacityAnalytics|mem|demand|recommendedSize",
     ]
+
+    results = []
+    for rid, name in targets.items():
+        if not rid:
+            continue
+        values = _latest_stats(client, rid, stat_keys)
+        results.append(
+            {
+                "id": sanitize(rid),
+                "name": name,
+                "recommended_cpu": values["OnlineCapacityAnalytics|cpu|demand|recommendedSize"],
+                "recommended_memory": values["OnlineCapacityAnalytics|mem|demand|recommendedSize"],
+            }
+        )
+    return results

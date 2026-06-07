@@ -118,12 +118,12 @@ Aria Operations uses **OpsToken** authentication:
 ```
 POST /suite-api/api/auth/token/acquire
 {"username": "admin", "password": "...", "authSource": "LOCAL"}
-→ {"token": "abc123", "validity": 1800000}
+→ {"token": "abc123", "validity": 1765182896000}  # validity = expiry epoch ms
 
 Subsequent requests: Authorization: OpsToken abc123
 ```
 
-Tokens are valid for 30 minutes and automatically refreshed 60 seconds before expiry.
+Tokens have a 6-hour sliding validity (extended on each call, per the official spec); the client re-acquires automatically 60 seconds before expiry. The `validity` field is the expiry timestamp in epoch milliseconds, not a duration.
 
 ## Architecture
 

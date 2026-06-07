@@ -31,31 +31,23 @@ def get_aria_health(client: AriaClient) -> dict:
         client: Authenticated Aria Operations API client.
 
     Returns:
-        Dict with overall platform health, service status list, and node info.
+        Dict with overall_status (ONLINE/OFFLINE), healthy bool,
+        system_time_ms, and details. Note: the endpoint itself returns
+        HTTP 503 when the node is offline.
     """
+    # NodeStatus per spec contains exactly: status ("ONLINE" when all
+    # services run, else "OFFLINE"), systemTime, and optional details /
+    # humanlyReadableSystemTime. The old code read invented fields
+    # (clusterStatus.clusterVipAddress as "overall_status" — an IP address,
+    # and a services[] array that does not exist). 2026-06-08 user report.
     data = client.get("/deployment/node/status")
 
-    services = data.get("services", [])
-    service_statuses = [
-        {
-            "name": sanitize(s.get("name", "")),
-            "status": sanitize(s.get("status", {}).get("state", "")),
-            "health": sanitize(s.get("status", {}).get("health", "")),
-            "message": sanitize(s.get("status", {}).get("statusMessage", ""), max_len=300),
-        }
-        for s in services
-    ]
-
-    unhealthy = [s for s in service_statuses if s["status"] != "RUNNING"]
-
+    status = sanitize(data.get("status", ""))
     return {
-        "node_type": sanitize(data.get("nodeType", "")),
-        "node_address": sanitize(data.get("nodeAddress", "")),
-        "overall_status": sanitize(data.get("clusterStatus", {}).get("clusterVipAddress", "")),
-        "service_count": len(services),
-        "unhealthy_services": unhealthy,
-        "all_services_healthy": len(unhealthy) == 0,
-        "services": service_statuses,
+        "overall_status": status,
+        "healthy": status == "ONLINE",
+        "system_time_ms": data.get("systemTime", None),
+        "details": sanitize(str(data.get("details", "")), max_len=500),
     }
 
 

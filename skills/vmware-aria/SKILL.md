@@ -58,7 +58,7 @@ vmware-aria doctor
 - Check VM contention: CPU Ready %, Memory Balloon, Swap usage
 - Fetch time-series metrics for any resource (CPU, memory, disk, network)
 - Find top consumers by CPU/memory/disk/network
-- Detect ML-based anomalies and risk scores
+- Check per-resource anomaly counts and risk badge scores
 
 **Alert management:**
 - List, investigate, acknowledge, or cancel active alerts
@@ -112,7 +112,7 @@ vmware-aria doctor
 3. Check memory pressure → `vmware-aria resource metrics <vm-id> --metrics mem.balloon.average,mem.swapped.average --hours 24`
    - Balloon >0 = ESXi reclaiming memory; Swap >0 = severe — act immediately
 4. List active CRITICAL/IMMEDIATE alerts → `vmware-aria alert list --criticality CRITICAL`
-5. Check ML anomalies → `vmware-aria anomaly list`
+5. Check anomaly counts → `vmware-aria anomaly list`
 6. Cross-validate against the [investigation protocol](references/investigation-protocol.md) before reporting any "root cause" — high consumption is rarely the root, usually a downstream symptom
 
 ### Investigate High CPU Alert

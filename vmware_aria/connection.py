@@ -1,7 +1,10 @@
 """Aria Operations REST API client with token-based authentication.
 
 Authenticates via POST /suite-api/api/auth/token/acquire with username/password/authSource.
-Stores the OpsToken and refreshes it automatically when it expires (30-minute validity).
+Stores the OpsToken and re-acquires it automatically near expiry. Per the official
+spec, the token has a 6-hour sliding validity ("extended after each call and set to
+6 hours from the last call") and the acquire response's `validity` field is an epoch
+timestamp in milliseconds — NOT a duration.
 
 Base URL pattern: https://<aria-host>/suite-api/api/
 """
@@ -69,11 +72,23 @@ class AriaClient:
                 "Aria Operations token acquisition succeeded but no token returned"
             )
 
-        # validity is in milliseconds
-        validity_ms = data.get("validity", 1_800_000)
+        # `validity` is an epoch timestamp in MILLISECONDS (when the token
+        # expires), not a duration. Default validity is 6 hours, sliding —
+        # the server extends it on every call. 2026-06-08 user report: the
+        # old code treated it as a duration (now + validity), producing an
+        # expiry ~56 years in the future, so the token never refreshed and
+        # sessions longer than 6h idle died with 401.
+        validity_epoch_ms = data.get("validity")
         self._token = token
-        self._token_expires_at = time.time() + (validity_ms / 1000.0)
-        _log.info("Aria Operations token acquired for %s (valid %.0fs)", self._target.host, validity_ms / 1000.0)
+        if validity_epoch_ms:
+            self._token_expires_at = validity_epoch_ms / 1000.0
+        else:
+            self._token_expires_at = time.time() + 6 * 3600
+        _log.info(
+            "Aria Operations token acquired for %s (expires in %.0fs)",
+            self._target.host,
+            self._token_expires_at - time.time(),
+        )
 
     def _ensure_token(self) -> None:
         """Re-acquire token if expired or near expiry."""
@@ -104,12 +119,26 @@ class AriaClient:
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
-    def post(self, path: str, json_data: dict[str, Any] | None = None) -> dict:
+    def post(
+        self,
+        path: str,
+        json_data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict:
         """POST request. Returns parsed JSON response."""
-        resp = self._client.post(path, headers=self._headers(), json=json_data)
+        resp = self._client.post(path, headers=self._headers(), json=json_data, params=params)
         if resp.status_code in (401, 403):
             self._acquire_token()
-            resp = self._client.post(path, headers=self._headers(), json=json_data)
+            resp = self._client.post(path, headers=self._headers(), json=json_data, params=params)
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    def put(self, path: str, json_data: dict[str, Any] | None = None) -> dict:
+        """PUT request. Returns parsed JSON response."""
+        resp = self._client.put(path, headers=self._headers(), json=json_data)
+        if resp.status_code in (401, 403):
+            self._acquire_token()
+            resp = self._client.put(path, headers=self._headers(), json=json_data)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
