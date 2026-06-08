@@ -19,6 +19,28 @@ _log = logging.getLogger("vmware-aria.ops.alerts")
 
 _VALID_CRITICALITIES = {"INFORMATION", "WARNING", "IMMEDIATE", "CRITICAL"}
 
+# Severity ranking for picking the max across AlertDefinition states[]
+_SEVERITY_RANK = {
+    "NONE": 0,
+    "AUTO": 1,
+    "INFORMATION": 2,
+    "WARNING": 3,
+    "IMMEDIATE": 4,
+    "CRITICAL": 5,
+}
+
+
+def _max_state_severity(states: list[dict]) -> str:
+    """Return the highest severity across AlertDefinition states[].
+
+    Falls back to the first state's severity when values are unranked,
+    and "" when there are no states.
+    """
+    severities = [str(s.get("severity", "")) for s in states if s.get("severity")]
+    if not severities:
+        return ""
+    return max(severities, key=lambda s: _SEVERITY_RANK.get(s.upper(), -1))
+
 
 # ---------------------------------------------------------------------------
 # list_alerts
@@ -66,20 +88,23 @@ def list_alerts(
     data = client.post("/alerts/query", json_data=query, params={"pageSize": limit})
     items = data.get("alerts", [])
 
+    # Alert model fields (2026-06-08 spec audit): criticality is `alertLevel`,
+    # the display name is `alertDefinitionName`. There is no alertName,
+    # criticality, resourceName, or info field — resolve the resource name
+    # via get_resource(resourceId) when needed.
     return [
         {
             "id": sanitize(a.get("alertId", "")),
-            "name": sanitize(a.get("alertName", ""), max_len=300),
-            "criticality": sanitize(a.get("criticality", "")),
+            "name": sanitize(a.get("alertDefinitionName", ""), max_len=300),
+            "criticality": sanitize(a.get("alertLevel", "")),
             "status": sanitize(a.get("status", "")),
             "alert_impact": sanitize(a.get("alertImpact", "")),
             "resource_id": sanitize(a.get("resourceId", "")),
-            "resource_name": sanitize(a.get("resourceName", ""), max_len=300),
             "start_time_ms": a.get("startTimeUTC", None),
             "update_time_ms": a.get("updateTimeUTC", None),
             "alert_definition_id": sanitize(a.get("alertDefinitionId", "")),
+            "alert_definition_name": sanitize(a.get("alertDefinitionName", ""), max_len=300),
             "control_state": sanitize(a.get("controlState", "")),
-            "info": sanitize(a.get("info", ""), max_len=500),
         }
         for a in items
     ]
@@ -90,15 +115,64 @@ def list_alerts(
 # ---------------------------------------------------------------------------
 
 
+def _get_contributing_symptoms(client: AriaClient, alert_id: str) -> list[dict]:
+    """Fetch triggered symptoms via GET /alerts/contributingsymptoms?id=<alertId>.
+
+    The Alert model has no alertSymptomList — triggered symptoms come from
+    this separate endpoint (2026-06-08 spec audit). The response container
+    key varies across versions, so parse whichever value is a list and read
+    Symptom fields defensively. Failures degrade to an empty list (logged)
+    so a symptoms hiccup never breaks get_alert.
+    """
+    try:
+        data = client.get("/alerts/contributingsymptoms", params={"id": alert_id})
+    except Exception as exc:
+        _log.warning("Could not fetch contributing symptoms for alert %s: %s", alert_id, exc)
+        return []
+
+    container: list = []
+    for key in ("symptoms", "symptom", "contributingSymptoms", "result"):
+        value = data.get(key)
+        if isinstance(value, list):
+            container = value
+            break
+    else:
+        container = next((v for v in data.values() if isinstance(v, list)), [])
+
+    symptoms = []
+    for s in container:
+        if not isinstance(s, dict):
+            continue
+        symptoms.append(
+            {
+                "id": sanitize(str(s.get("id") or s.get("symptomId") or "")),
+                "name": sanitize(
+                    str(s.get("name") or s.get("message") or ""), max_len=300
+                ),
+                "severity": sanitize(
+                    str(s.get("severity") or s.get("symptomCriticality") or "")
+                ),
+                "symptom_definition_id": sanitize(str(s.get("symptomDefinitionId") or "")),
+                "resource_id": sanitize(str(s.get("resourceId") or "")),
+            }
+        )
+    return symptoms
+
+
 def get_alert(client: AriaClient, alert_id: str) -> dict:
     """Get full details for a specific alert.
+
+    Triggered symptoms are fetched from GET /alerts/contributingsymptoms.
+    Recommendations are not included — they hang off the alert definition,
+    not the alert. The Alert model has no resourceName field; resolve the
+    name via get_resource(resource_id) when needed.
 
     Args:
         client: Authenticated Aria Operations API client.
         alert_id: The alert UUID.
 
     Returns:
-        Dict with alert details, symptom list, and recommendation.
+        Dict with alert details and contributing symptom list.
     """
     if not alert_id:
         raise ValueError("alert_id must not be empty")
@@ -106,32 +180,18 @@ def get_alert(client: AriaClient, alert_id: str) -> dict:
     data = client.get(f"/alerts/{alert_id}")
     return {
         "id": sanitize(data.get("alertId", "")),
-        "name": sanitize(data.get("alertName", ""), max_len=300),
-        "criticality": sanitize(data.get("criticality", "")),
+        "name": sanitize(data.get("alertDefinitionName", ""), max_len=300),
+        "criticality": sanitize(data.get("alertLevel", "")),
         "status": sanitize(data.get("status", "")),
         "alert_impact": sanitize(data.get("alertImpact", "")),
         "resource_id": sanitize(data.get("resourceId", "")),
-        "resource_name": sanitize(data.get("resourceName", ""), max_len=300),
         "start_time_ms": data.get("startTimeUTC", None),
         "update_time_ms": data.get("updateTimeUTC", None),
         "cancel_time_ms": data.get("cancelTimeUTC", None),
-        "info": sanitize(data.get("info", ""), max_len=500),
         "control_state": sanitize(data.get("controlState", "")),
         "alert_definition_id": sanitize(data.get("alertDefinitionId", "")),
         "alert_definition_name": sanitize(data.get("alertDefinitionName", ""), max_len=300),
-        "symptoms": [
-            {
-                "id": sanitize(s.get("symptomId", "")),
-                "name": sanitize(s.get("symptomName", ""), max_len=300),
-                "state": sanitize(s.get("state", "")),
-                "severity": sanitize(s.get("severity", "")),
-            }
-            for s in data.get("alertSymptomList", [])
-        ],
-        "recommendations": [
-            sanitize(r.get("recommendationText", ""), max_len=1000)
-            for r in data.get("alertRecommendationList", [])
-        ],
+        "symptoms": _get_contributing_symptoms(client, alert_id),
     }
 
 
@@ -280,6 +340,16 @@ def list_alert_definitions(
         name = sanitize(d.get("name", ""), max_len=300)
         if name_filter and name_filter.lower() not in name.lower():
             continue
+        states = d.get("states") or []
+        # AlertDefinition has no top-level criticality or active fields
+        # (2026-06-08 spec audit): criticality is per-state — report the
+        # max severity across states[].severity.
+        criticality = _max_state_severity(states)
+        # impact location is version-ambiguous: read top-level
+        # impact.impactType first, fall back to states[0].impact.impactType.
+        impact = (d.get("impact") or {}).get("impactType", "")
+        if not impact and states:
+            impact = ((states[0].get("impact") or {}).get("impactType", ""))
         results.append(
             {
                 "id": sanitize(d.get("id", "")),
@@ -287,11 +357,10 @@ def list_alert_definitions(
                 "description": sanitize(d.get("description", ""), max_len=500),
                 "adapter_kind": sanitize(d.get("adapterKindKey", "")),
                 "resource_kind": sanitize(d.get("resourceKindKey", "")),
-                "criticality": sanitize(d.get("criticality", "")),
-                "impact": sanitize(d.get("impact", {}).get("impactType", "")),
+                "criticality": sanitize(criticality),
+                "impact": sanitize(impact),
                 "type": sanitize(d.get("type", "")),
                 "sub_type": sanitize(d.get("subType", "")),
-                "enabled": d.get("active", True),
             }
         )
     return results
@@ -325,15 +394,15 @@ def create_alert_definition(
         description: Human-readable description.
         resource_kind: Resource kind this alert applies to, e.g. VirtualMachine,
             HostSystem, ClusterComputeResource.
-        symptom_definition_ids: List of symptom definition UUIDs that trigger this alert.
-            ANY one symptom firing will trigger the alert.
+        symptom_definition_ids: List of symptom definition UUIDs that trigger this
+            alert. Any one symptom firing triggers (OR across symptom ids).
         criticality: Alert severity: INFORMATION, WARNING, IMMEDIATE, CRITICAL.
         adapter_kind: Adapter kind key. Default VMWARE (vSphere adapter).
         audit_logger: Optional audit logger.
         target_name: Target name for audit log.
 
     Returns:
-        Dict with new alert definition id, name, enabled.
+        Dict with new alert definition id and name.
     """
     if not name:
         raise ValueError("name must not be empty")
@@ -351,15 +420,16 @@ def create_alert_definition(
         # "base-symptom-set" is the correct wire key (the Broadcom portal's
         # model page calls the property "symptoms", but the live server JSON
         # uses base-symptom-set — verified against VMware's own client code).
-        # relation must be SELF; "any symptom triggers" is expressed via
-        # aggregation/symptomSetOperator.
+        # relation must be SELF. aggregation=ALL + symptomSetOperator=OR is
+        # the doc-sample-verified combination: any one symptom firing
+        # triggers (OR across symptom ids).
         "states": [
             {
                 "severity": criticality,
                 "base-symptom-set": {
                     "type": "SYMPTOM_SET",
                     "relation": "SELF",
-                    "aggregation": "ANY",
+                    "aggregation": "ALL",
                     "symptomSetOperator": "OR",
                     "symptomDefinitionIds": symptom_definition_ids,
                 },
@@ -368,10 +438,10 @@ def create_alert_definition(
     }
 
     data = client.post("/alertdefinitions", json_data=payload)
+    # AlertDefinition has no top-level active field — no enabled in response.
     result = {
         "id": sanitize(data.get("id", "")),
         "name": sanitize(data.get("name", ""), max_len=300),
-        "enabled": data.get("active", True),
         "action": "created",
     }
 
@@ -509,7 +579,8 @@ def list_symptom_definitions(
     limit = max(1, min(limit, 500))
     params: dict = {"pageSize": limit}
     if resource_kind:
-        params["resourceKindKey"] = resource_kind
+        # Query param is `resourceKind`, NOT `resourceKindKey` (spec audit).
+        params["resourceKind"] = resource_kind
 
     data = client.get("/symptomdefinitions", params=params)
     items = data.get("symptomDefinitions", [])

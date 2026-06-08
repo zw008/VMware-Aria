@@ -24,6 +24,13 @@ _log = logging.getLogger("vmware-aria.ops.capacity")
 
 _CAPACITY_DIMENSIONS = ("cpu", "mem", "diskspace")
 
+# The remaining-capacity PERCENTAGE exists only at group level — there is
+# no per-dimension OnlineCapacityAnalytics|{dim}|demand|capacityRemainingPercentage
+# key (2026-06-08 spec audit). Per-dimension keys that ARE real on
+# cluster/host/datacenter: |{dim}|demand|capacityRemaining and
+# |{dim}|demand|timeRemaining.
+_GROUP_REMAINING_PCT_KEY = "OnlineCapacityAnalytics|capacityRemainingPercentage"
+
 
 def _latest_stats(client: AriaClient, resource_id: str, stat_keys: list[str]) -> dict[str, float | None]:
     """Fetch the latest value for each statKey via GET /resources/{id}/stats/latest.
@@ -52,26 +59,29 @@ def _latest_stats(client: AriaClient, resource_id: str, stat_keys: list[str]) ->
 
 
 def get_capacity_overview(client: AriaClient, cluster_id: str) -> dict:
-    """Get a capacity utilization overview for a cluster (remaining % + days left).
+    """Get a capacity utilization overview for a cluster.
 
-    Combines remaining-capacity percentage and time-remaining projections per
-    dimension (cpu/mem/diskspace) from the OnlineCapacityAnalytics metrics.
+    Combines the group-level remaining-capacity percentage with per-dimension
+    (cpu/mem/diskspace) absolute remaining capacity and time-remaining
+    projections from the OnlineCapacityAnalytics metrics. The percentage
+    exists only at group level — there is no per-dimension percentage key.
 
     Args:
         client: Authenticated Aria Operations API client.
         cluster_id: The cluster resource UUID.
 
     Returns:
-        Dict with per-dimension remaining_pct and time_remaining_days.
+        Dict with group-level capacity_remaining_pct plus per-dimension
+        capacity_remaining and time_remaining_days.
         Values are None when capacity analytics have no data yet.
     """
     if not cluster_id:
         raise ValueError("cluster_id must not be empty")
 
-    stat_keys = [
+    stat_keys = [_GROUP_REMAINING_PCT_KEY] + [
         f"OnlineCapacityAnalytics|{dim}|demand|{metric}"
         for dim in _CAPACITY_DIMENSIONS
-        for metric in ("capacityRemainingPercentage", "timeRemaining")
+        for metric in ("capacityRemaining", "timeRemaining")
     ]
     values = _latest_stats(client, cluster_id, stat_keys)
 
@@ -80,11 +90,15 @@ def get_capacity_overview(client: AriaClient, cluster_id: str) -> dict:
         dimensions.append(
             {
                 "dimension": dim,
-                "remaining_pct": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemainingPercentage"],
+                "capacity_remaining": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemaining"],
                 "time_remaining_days": values[f"OnlineCapacityAnalytics|{dim}|demand|timeRemaining"],
             }
         )
-    return {"resource_id": cluster_id, "dimensions": dimensions}
+    return {
+        "resource_id": cluster_id,
+        "capacity_remaining_pct": values[_GROUP_REMAINING_PCT_KEY],
+        "dimensions": dimensions,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -104,26 +118,27 @@ def get_remaining_capacity(client: AriaClient, resource_id: str) -> dict:
         resource_id: The resource UUID (typically a ClusterComputeResource).
 
     Returns:
-        Dict with remaining capacity (absolute + percentage) per dimension.
+        Dict with group-level capacity_remaining_pct and per-dimension
+        absolute remaining capacity. The percentage exists only at group
+        level — there is no per-dimension percentage key.
         Values are None when capacity analytics have no data yet.
     """
     if not resource_id:
         raise ValueError("resource_id must not be empty")
 
-    stat_keys = [
-        f"OnlineCapacityAnalytics|{dim}|demand|{metric}"
+    stat_keys = [_GROUP_REMAINING_PCT_KEY] + [
+        f"OnlineCapacityAnalytics|{dim}|demand|capacityRemaining"
         for dim in _CAPACITY_DIMENSIONS
-        for metric in ("capacityRemaining", "capacityRemainingPercentage")
     ]
     values = _latest_stats(client, resource_id, stat_keys)
 
     return {
         "resource_id": resource_id,
+        "capacity_remaining_pct": values[_GROUP_REMAINING_PCT_KEY],
         "remaining_capacity": [
             {
                 "dimension": dim,
                 "remaining_value": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemaining"],
-                "remaining_pct": values[f"OnlineCapacityAnalytics|{dim}|demand|capacityRemainingPercentage"],
             }
             for dim in _CAPACITY_DIMENSIONS
         ],
@@ -209,9 +224,11 @@ def list_rightsizing_recommendations(
             for r in listing.get("resourceList", [])
         }
 
+    # VM-published rightsizing keys have NO demand segment (spec audit):
+    # OnlineCapacityAnalytics|{cpu,mem}|recommendedSize.
     stat_keys = [
-        "OnlineCapacityAnalytics|cpu|demand|recommendedSize",
-        "OnlineCapacityAnalytics|mem|demand|recommendedSize",
+        "OnlineCapacityAnalytics|cpu|recommendedSize",
+        "OnlineCapacityAnalytics|mem|recommendedSize",
     ]
 
     results = []
@@ -223,8 +240,8 @@ def list_rightsizing_recommendations(
             {
                 "id": sanitize(rid),
                 "name": name,
-                "recommended_cpu": values["OnlineCapacityAnalytics|cpu|demand|recommendedSize"],
-                "recommended_memory": values["OnlineCapacityAnalytics|mem|demand|recommendedSize"],
+                "recommended_cpu": values["OnlineCapacityAnalytics|cpu|recommendedSize"],
+                "recommended_memory": values["OnlineCapacityAnalytics|mem|recommendedSize"],
             }
         )
     return results

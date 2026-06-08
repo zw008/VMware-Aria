@@ -56,7 +56,9 @@ def list_report_definitions(
             "id": sanitize(d.get("id", "")),
             "name": name,
             "description": sanitize(d.get("description", ""), max_len=500),
-            "subject_type": sanitize(d.get("subject", {}).get("resourceKindKey", ""), max_len=200),
+            # ReportDefinition `subject` is an ARRAY OF STRINGS (resource
+            # kinds), not an object (2026-06-08 spec audit).
+            "subject_type": sanitize(", ".join(d.get("subject") or []), max_len=200),
             "owner": sanitize(d.get("owner", ""), max_len=200),
         })
     return results
@@ -155,25 +157,27 @@ def list_reports(
         limit: Maximum number of reports to return (1–200).
 
     Returns:
-        List of report summary dicts with id, name, status, generation_time.
+        List of report summary dicts with id, name, status, completion_time_ms.
     """
     limit = max(1, min(limit, 200))
     # GET /reports supports name/resourceId/status/subject only — there is no
-    # reportDefinitionId query param (2026-06-08 user report); filter
-    # client-side on the response field instead.
-    data = client.get("/reports", params={"pageSize": limit})
+    # reportDefinitionId or pageSize query param (2026-06-08 user report +
+    # spec audit); filter and limit client-side instead.
+    data = client.get("/reports")
     items = data.get("reports", [])
     if definition_id:
         items = [r for r in items if r.get("reportDefinitionId") == definition_id]
+    items = items[:limit]
 
+    # The wire field is `completionTime` — generationTime/finishTime
+    # don't exist (2026-06-08 spec audit).
     return [
         {
             "id": sanitize(r.get("id", "")),
             "name": sanitize(r.get("name", ""), max_len=300),
             "status": sanitize(r.get("status", "")),
             "definition_id": sanitize(r.get("reportDefinitionId", "")),
-            "generation_time_ms": r.get("generationTime"),
-            "finish_time_ms": r.get("finishTime"),
+            "completion_time_ms": r.get("completionTime"),
             "owner": sanitize(r.get("owner", ""), max_len=200),
         }
         for r in items
@@ -215,8 +219,8 @@ def get_report(
         "name": sanitize(data.get("name", ""), max_len=300),
         "status": sanitize(data.get("status", "")),
         "definition_id": sanitize(data.get("reportDefinitionId", "")),
-        "generation_time_ms": data.get("generationTime"),
-        "finish_time_ms": data.get("finishTime"),
+        # wire field is `completionTime` (generationTime/finishTime don't exist)
+        "completion_time_ms": data.get("completionTime"),
         "download_url": download_url,
         "csv_url": csv_url,
     }

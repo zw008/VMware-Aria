@@ -2,13 +2,13 @@
 
 ## Automation Level Reference
 
-Each operation is classified by autonomy level per the Enterprise Harness Engineering framework. **vmware-aria is heavily L1/L2 (21 read / 6 write)** — primarily a monitoring and analysis skill.
+Each operation is classified by autonomy level per the Enterprise Harness Engineering framework. **vmware-aria is heavily L1/L2 (20 read / 7 write)** — primarily a monitoring and analysis skill.
 
 | Level | Meaning | Agent autonomy | Examples in this skill |
 |:-:|---|---|---|
-| **L1** | Read-only, raw data | Always auto-run | `list_resources`, `get_resource`, `get_metrics`, `list_alerts`, `get_alert_details`, `list_alert_definitions`, capacity/efficiency badge queries |
-| **L2** | Read + analysis / recommendation | Always auto-run | anomaly detection, top-N consumer ranking, capacity trend forecasting, alert correlation, symptom-to-recommendation mapping |
-| **L3** | Single write — user must approve | Only after explicit confirmation | `acknowledge_alert`, `cancel_alert`, `suspend_alert`, `take_alert_ownership` *(the only writes; all auditable)* |
+| **L1** | Read-only, raw data | Always auto-run | `list_resources`, `get_resource`, `get_resource_metrics`, `list_alerts`, `get_alert`, `list_alert_definitions`, capacity / badge queries |
+| **L2** | Read + analysis / recommendation | Always auto-run | anomaly counts, top-N consumer ranking, capacity trend forecasting, rightsizing recommendations |
+| **L3** | Single write — user must approve | Only after explicit confirmation | `acknowledge_alert` (via takeownership action), `cancel_alert`, `create_alert_definition`, `set_alert_definition_state`, `delete_alert_definition`, `generate_report`, `delete_report` *(the only writes; all auditable)* |
 | **L4** | Multi-step plan / apply workflow | *N/A currently* | — *(no multi-step orchestration; Aria is observe/analyze, not configure)* |
 | **L5** | Auto-remediation from learned pattern | Pattern library only; requires `risk:low` + `reversible:true` + `repeatable:true` | *(roadmap — candidates: auto-acknowledge known-noisy alerts, auto-cancel resolved-by-event alerts)* |
 
@@ -29,28 +29,28 @@ Each operation is classified by autonomy level per the Enterprise Harness Engine
 
 ### Alert Management
 
-- **List active or all alerts**: filter by criticality (INFORMATION/WARNING/IMMEDIATE/CRITICAL) or resource
-- **Inspect alert details**: full symptom list, recommendations, timeline
+- **List active or all alerts**: filter by criticality (INFORMATION/WARNING/IMMEDIATE/CRITICAL) or resource. Alerts carry the resource ID only (the Alert model has no resource name) — resolve names via `get_resource`
+- **Inspect alert details**: contributing (triggered) symptoms from the dedicated contributingsymptoms endpoint, plus timeline. Recommendations are attached to the alert definition, not the alert
 - **Acknowledge alerts**: mark as seen without closing (control state → ACKNOWLEDGED)
 - **Cancel alerts**: permanently dismiss (status → CANCELLED)
 - **Browse alert definitions**: the templates that define when alerts fire
 
 ### Capacity Planning
 
-- **Cluster capacity overview**: Aria's own recommendations for the cluster
+- **Cluster capacity overview**: group-level remaining-capacity percentage plus per-dimension (cpu/mem/diskspace) headroom and days-until-full (the percentage metric only exists at group level)
 - **Remaining capacity**: how much more CPU, memory, disk can be added before hitting limits
 - **Time remaining**: predicted days until each capacity dimension is exhausted (based on trend)
 - **Rightsizing recommendations**: identify over-provisioned VMs (reclaim resources) and under-provisioned VMs (prevent degradation)
 
 ### Anomaly Detection
 
-- **List anomalies**: metric deviations detected by Aria's ML models, optionally scoped to one resource
-- **Risk badge**: composite risk score (0–100) with contributing causes — predicts likelihood of future problems
+- **List anomalies**: per-resource Total Anomalies counts (`System Attributes|total_alarms` metric — active symptoms, events, and DT violations on the object and its children), optionally scoped to one resource. The UI's anomalous-metrics list is not part of the public API
+- **Risk badge**: composite risk score (0–100) from the resource's `badges[]` array — predicts likelihood of future problems; for contributing causes inspect the resource's active alerts
 
 ### Platform Health
 
-- **Aria health check**: all internal Aria Ops services (RUNNING / STOPPED / ERROR)
-- **Collector group status**: list remote collector agents and their connectivity state
+- **Aria health check**: node status (ONLINE / OFFLINE) — a per-service breakdown is not exposed by the public API
+- **Collector group status**: list collector groups (member IDs) enriched with each collector's name, UP/DOWN state, and local flag
 
 ---
 
@@ -72,29 +72,33 @@ Each operation is classified by autonomy level per the Enterprise Harness Engine
 
 ## Aria Operations API Coverage
 
+All requests carry `Authorization: vRealizeOpsToken <token>`.
+
 | Endpoint | Used For |
 |----------|---------|
 | `POST /suite-api/api/auth/token/acquire` | Token authentication |
-| `POST /suite-api/api/auth/token/release` | Token release on close |
-| `GET /suite-api/api/resources` | list_resources |
-| `GET /suite-api/api/resources/{id}` | get_resource |
+| `POST /suite-api/api/auth/token/release` | Token release on close (no body; token identified by the Authorization header) |
+| `GET /suite-api/api/resources` | list_resources (also candidate listing for topn / anomaly / rightsizing scans) |
+| `GET /suite-api/api/resources/{id}` | get_resource, get_resource_health, get_resource_riskbadge (badges come from the `badges[]` array — there are no `/badge/*` endpoints) |
 | `POST /suite-api/api/resources/{id}/stats/query` | get_resource_metrics |
-| `GET /suite-api/api/resources/{id}/badge/health` | get_resource_health |
-| `POST /suite-api/api/resources/query/topn` | get_top_consumers |
-| `GET /suite-api/api/alerts` | list_alerts |
+| `GET /suite-api/api/resources/stats/topn` | get_top_consumers (resourceId list capped at 100) |
+| `GET /suite-api/api/resources/{id}/stats/latest` | capacity tools (OnlineCapacityAnalytics keys), list_anomalies (`System Attributes\|total_alarms`) |
+| `POST /suite-api/api/alerts/query` | list_alerts (server-side status/criticality/resource filtering) |
 | `GET /suite-api/api/alerts/{id}` | get_alert |
-| `POST /suite-api/api/alerts/{id}/acknowledge` | acknowledge_alert |
-| `DELETE /suite-api/api/alerts/{id}` | cancel_alert |
+| `GET /suite-api/api/alerts/contributingsymptoms?id={alertId}` | get_alert (triggered symptoms) |
+| `POST /suite-api/api/alerts?action=takeownership` | acknowledge_alert |
+| `POST /suite-api/api/alerts?action=cancel` | cancel_alert |
 | `GET /suite-api/api/alertdefinitions` | list_alert_definitions |
-| `GET /suite-api/api/resources/{id}/recommendations` | get_capacity_overview |
-| `GET /suite-api/api/resources/{id}/remainingcapacity` | get_remaining_capacity |
-| `GET /suite-api/api/resources/{id}/timeremaining` | get_time_remaining |
-| `GET /suite-api/api/recommendations/rightsizing` | list_rightsizing_recommendations |
-| `GET /suite-api/api/resources/{id}/anomalies` | list_anomalies (per resource) |
-| `GET /suite-api/api/anomalies` | list_anomalies (global) |
-| `GET /suite-api/api/resources/{id}/badge/risk` | get_resource_riskbadge |
+| `POST /suite-api/api/alertdefinitions` | create_alert_definition |
+| `PUT /suite-api/api/alertdefinitions/{id}/enable` (or `/disable`) | set_alert_definition_state |
+| `DELETE /suite-api/api/alertdefinitions/{id}` | delete_alert_definition |
+| `GET /suite-api/api/symptomdefinitions` | list_symptom_definitions (filter param is `resourceKind`) |
+| `GET /suite-api/api/reportdefinitions` | list_report_definitions (`subject` is an array of resource-kind strings) |
+| `POST /suite-api/api/reports` | generate_report (requires at least one resource UUID) |
+| `GET /suite-api/api/reports` / `GET /suite-api/api/reports/{id}` | list_reports / get_report (timestamp field is `completionTime`; definition filter and limit applied client-side) |
+| `DELETE /suite-api/api/reports/{id}` | delete_report |
 | `GET /suite-api/api/deployment/node/status` | get_aria_health, is_alive |
-| `GET /suite-api/api/collectorgroups` | list_collector_groups |
+| `GET /suite-api/api/collectorgroups` + `GET /suite-api/api/collectors` | list_collector_groups (groups carry member IDs; details enriched from /collectors) |
 
 ---
 

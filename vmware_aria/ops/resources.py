@@ -35,6 +35,19 @@ _VALID_SORT_METRICS = {
     "net|usage_average",
 }
 
+# URL-length protection for GET /resources/stats/topn: each resourceId adds
+# ~40 chars to the query string; >100 IDs risks HTTP 414 (URI Too Long).
+_TOPN_MAX_RESOURCE_IDS = 100
+
+
+def _badges_by_type(dto: dict) -> dict[str, dict]:
+    """Index the ResourceDto badges[] array ({type, color, score}) by type.
+
+    The wire field is ``badges`` (array, type enum HEALTH/RISK/EFFICIENCY) —
+    there is no singular ``badge`` object (2026-06-08 spec audit).
+    """
+    return {b.get("type", ""): b for b in dto.get("badges") or []}
+
 
 
 # ---------------------------------------------------------------------------
@@ -72,15 +85,17 @@ def list_resources(
         name = sanitize(r.get("resourceKey", {}).get("name", ""))
         if name_filter and name_filter.lower() not in name.lower():
             continue
+        health = _badges_by_type(r).get("HEALTH", {})
         results.append(
             {
                 "id": sanitize(r.get("identifier", "")),
                 "name": name,
                 "kind": sanitize(r.get("resourceKey", {}).get("resourceKindKey", "")),
                 "adapter_kind": sanitize(r.get("resourceKey", {}).get("adapterKindKey", "")),
-                "health_color": sanitize(r.get("badge", {}).get("health", {}).get("color", "")),
-                "health_score": r.get("badge", {}).get("health", {}).get("score", None),
-                "status": sanitize(r.get("resourceStatusStates", [{}])[0].get("resourceState", "")),
+                "health_color": sanitize(health.get("color", "")),
+                "health_score": health.get("score", None),
+                # guard: API may return "resourceStatusStates": [] (key present, empty)
+                "status": sanitize((r.get("resourceStatusStates") or [{}])[0].get("resourceState", "")),
             }
         )
     return results
@@ -106,19 +121,22 @@ def get_resource(client: AriaClient, resource_id: str) -> dict:
 
     data = client.get(f"/resources/{resource_id}")
     key = data.get("resourceKey", {})
-    badge = data.get("badge", {})
+    badges = _badges_by_type(data)
+    health = badges.get("HEALTH", {})
+    risk = badges.get("RISK", {})
+    efficiency = badges.get("EFFICIENCY", {})
     return {
         "id": sanitize(data.get("identifier", "")),
         "name": sanitize(key.get("name", "")),
         "kind": sanitize(key.get("resourceKindKey", "")),
         "adapter_kind": sanitize(key.get("adapterKindKey", "")),
         "description": sanitize(data.get("description", ""), max_len=1000),
-        "health_color": sanitize(badge.get("health", {}).get("color", "")),
-        "health_score": badge.get("health", {}).get("score", None),
-        "risk_color": sanitize(badge.get("risk", {}).get("color", "")),
-        "risk_score": badge.get("risk", {}).get("score", None),
-        "efficiency_color": sanitize(badge.get("efficiency", {}).get("color", "")),
-        "efficiency_score": badge.get("efficiency", {}).get("score", None),
+        "health_color": sanitize(health.get("color", "")),
+        "health_score": health.get("score", None),
+        "risk_color": sanitize(risk.get("color", "")),
+        "risk_score": risk.get("score", None),
+        "efficiency_color": sanitize(efficiency.get("color", "")),
+        "efficiency_score": efficiency.get("score", None),
         "identifiers": {
             sanitize(ident.get("identifierType", {}).get("name", "")): sanitize(ident.get("value", ""))
             for ident in data.get("resourceKey", {}).get("resourceIdentifiers", [])
@@ -281,6 +299,14 @@ def get_top_consumers(
     candidates = listing.get("resourceList", [])
     if not candidates:
         return []
+    if len(candidates) > _TOPN_MAX_RESOURCE_IDS:
+        _log.warning(
+            "Truncating topn candidate list from %d to %d resources "
+            "(URL length limit — HTTP 414 risk)",
+            len(candidates),
+            _TOPN_MAX_RESOURCE_IDS,
+        )
+        candidates = candidates[:_TOPN_MAX_RESOURCE_IDS]
     names = {
         r.get("identifier", ""): sanitize(r.get("resourceKey", {}).get("name", ""))
         for r in candidates
@@ -307,8 +333,10 @@ def get_top_consumers(
     for group in data.get("resourceStatGroups", []):
         rid = group.get("groupKey", "")
         latest_value = None
-        for stat in group.get("resourceStats", []):
-            points = stat.get("data", [])
+        # Each resourceStats[] element is {resourceId, stat: {statKey,
+        # timestamps, data}} — the data array nests under `stat`.
+        for entry in group.get("resourceStats", []):
+            points = entry.get("stat", {}).get("data", [])
             if points:
                 latest_value = points[-1]
         results.append(

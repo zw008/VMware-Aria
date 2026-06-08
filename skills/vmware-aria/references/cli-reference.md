@@ -141,7 +141,7 @@ Options:
 
 ### `vmware-aria alert get`
 
-Get full alert details with symptoms and recommendations.
+Get full alert details with contributing (triggered) symptoms. Recommendations are attached to the alert definition, not the alert. Alerts carry the resource ID only — resolve names via `vmware-aria resource get <id>`.
 
 ```
 vmware-aria alert get <alert-id> [OPTIONS]
@@ -188,17 +188,21 @@ Options:
   --target -t TEXT  Target name
 ```
 
+**Output**: Table with Name, Criticality (max severity across the definition's states), Resource Kind, Impact. Creating, enabling/disabling, and deleting alert definitions are MCP-only tools.
+
 ---
 
 ## Capacity Commands
 
 ### `vmware-aria capacity overview`
 
-Get capacity recommendations for a cluster.
+Get a capacity overview for a cluster.
 
 ```
 vmware-aria capacity overview <cluster-id> [OPTIONS]
 ```
+
+**Output**: JSON with group-level `capacity_remaining_pct` plus per-dimension (cpu/mem/diskspace) `capacity_remaining` and `time_remaining_days`. The percentage metric exists only at group level. Values are None while capacity analytics warm up.
 
 ### `vmware-aria capacity remaining`
 
@@ -208,7 +212,7 @@ Get remaining capacity headroom for a cluster or host.
 vmware-aria capacity remaining <resource-id> [OPTIONS]
 ```
 
-**Output**: JSON with remaining CPU (GHz), memory (GB), disk (GB) per dimension.
+**Output**: JSON with group-level `capacity_remaining_pct` and per-dimension `remaining_value` (absolute, unit per dimension e.g. MHz/KB).
 
 ### `vmware-aria capacity time-remaining`
 
@@ -218,7 +222,7 @@ Predict how many days until capacity is exhausted.
 vmware-aria capacity time-remaining <resource-id> [OPTIONS]
 ```
 
-**Output**: JSON with projected days per capacity dimension and confidence levels.
+**Output**: JSON with projected days per capacity dimension (None while capacity analytics have no data).
 
 ### `vmware-aria capacity rightsizing`
 
@@ -233,7 +237,7 @@ Options:
   --target -t TEXT     Target name
 ```
 
-**Output**: Table with VM name, recommendation type, current/recommended CPU count and memory.
+**Output**: Table with VM name, recommended CPU, and recommended memory (from the `OnlineCapacityAnalytics|{cpu,mem}|recommendedSize` metrics).
 
 ---
 
@@ -241,16 +245,18 @@ Options:
 
 ### `vmware-aria anomaly list`
 
-List detected anomalies.
+List per-resource anomaly counts (`System Attributes|total_alarms` Total Anomalies metric — the public API does not expose the UI's anomalous-metrics list).
 
 ```
 vmware-aria anomaly list [OPTIONS]
 
 Options:
   --resource-id TEXT   Scope to a specific resource
-  --limit -n INT       Max results [default: 20]
+  --limit -n INT       Max VMs to scan when listing [default: 20]
   --target -t TEXT     Target name
 ```
+
+**Output**: Table with resource name (or ID) and anomaly count; without `--resource-id`, only resources with non-zero counts are shown, sorted descending.
 
 ### `vmware-aria anomaly risk`
 
@@ -260,7 +266,7 @@ Get risk badge score for a resource.
 vmware-aria anomaly risk <resource-id> [OPTIONS]
 ```
 
-**Output**: JSON with risk score (0–100), color, and contributing causes.
+**Output**: JSON with risk score (0–100) and color (from the resource's `badges[]` array). For contributing causes, inspect the resource's active alerts.
 
 ---
 
@@ -274,7 +280,7 @@ Check Aria Operations platform health.
 vmware-aria health status [OPTIONS]
 ```
 
-**Output**: Console summary (HEALTHY / DEGRADED) + table of unhealthy services.
+**Output**: Console summary (ONLINE / OFFLINE) plus optional details. A per-service breakdown is not exposed by the public API.
 
 ### `vmware-aria health collectors`
 
@@ -284,7 +290,78 @@ List collector groups and member status.
 vmware-aria health collectors [OPTIONS]
 ```
 
-**Output**: Per-group tables listing collector name, state, type, and host.
+**Output**: Per-group tables listing collector ID, name, state (UP/DOWN), and local flag (marks the built-in collector on the Aria node).
+
+---
+
+## Report Commands
+
+### `vmware-aria report definitions`
+
+List available report definition templates.
+
+```
+vmware-aria report definitions [OPTIONS]
+
+Options:
+  --name TEXT       Filter by name substring
+  --limit -n INT    Max results [default: 50]
+  --target -t TEXT  Target name
+```
+
+**Output**: Table with Name, ID, Subject Type (resource kinds the template applies to), Owner.
+
+### `vmware-aria report generate`
+
+Trigger report generation from a definition template (async).
+
+```
+vmware-aria report generate <definition-id> --resources <id1,id2> [OPTIONS]
+
+Options:
+  --resources TEXT  Comma-separated resource UUIDs — at least one is required
+                    (the Report API generates against a resource)
+  --target -t TEXT  Target name
+```
+
+**Audit logged**: yes. Returns the queued `report_id`; poll with `report get`.
+
+### `vmware-aria report list`
+
+List generated reports.
+
+```
+vmware-aria report list [OPTIONS]
+
+Options:
+  --definition-id TEXT  Filter by definition UUID (applied client-side)
+  --limit -n INT        Max results [default: 20]
+  --target -t TEXT      Target name
+```
+
+### `vmware-aria report get`
+
+Get status and download URLs for a generated report.
+
+```
+vmware-aria report get <report-id> [OPTIONS]
+```
+
+**Output**: Status; when `COMPLETED`, the PDF `download_url` and `csv_url`.
+
+### `vmware-aria report delete`
+
+Delete a generated report (the definition and schedules remain intact).
+
+```
+vmware-aria report delete <report-id> [OPTIONS]
+
+Options:
+  --yes -y          Skip confirmation prompt
+  --target -t TEXT  Target name
+```
+
+**Audit logged**: yes.
 
 ---
 

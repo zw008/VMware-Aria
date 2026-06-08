@@ -233,6 +233,11 @@ def list_alerts(
 ) -> list[dict]:
     """[READ] List alerts from Aria Operations.
 
+    Returns alert summaries: name (from alertDefinitionName), criticality
+    (from alertLevel), status, impact, resource_id, timestamps, and control
+    state. The Alert model has no resource name field — resolve it via
+    get_resource(resource_id).
+
     Args:
         active_only: Return only active (non-cancelled) alerts. Default True.
         criticality: Filter by criticality: INFORMATION, WARNING, IMMEDIATE, CRITICAL.
@@ -251,7 +256,7 @@ def list_alerts(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_alert(alert_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get full details for one alert by UUID, including its triggering symptoms and remediation recommendations. Use after list_alerts to drill into a single alert; use list_alerts (not this tool) to discover or filter alerts. Returns one alert object: name, criticality, status, impact, affected resource, start/update/cancel timestamps, symptom list, and recommendations. To act on the alert afterwards, use acknowledge_alert or cancel_alert.
+    """[READ] Get full details for one alert by UUID, including its contributing (triggered) symptoms fetched from the alerts/contributingsymptoms endpoint. Use after list_alerts to drill into a single alert; use list_alerts (not this tool) to discover or filter alerts. Returns one alert object: name (from alertDefinitionName), criticality (from alertLevel), status, impact, resource_id, start/update/cancel timestamps, control state, and symptoms. The Alert model carries no resource name — resolve it via get_resource(resource_id). Recommendations hang off the alert definition, not the alert. To act on the alert afterwards, use acknowledge_alert or cancel_alert.
 
     Args:
         alert_id: The alert UUID (from list_alerts).
@@ -339,6 +344,9 @@ def list_alert_definitions(
 ) -> list[dict]:
     """[READ] List alert definitions (templates that generate alerts when triggered).
 
+    criticality is the max severity across the definition's states[] (the
+    AlertDefinition model has no top-level criticality or enabled field).
+
     Args:
         name_filter: Optional substring to filter by definition name (case-insensitive).
         limit: Maximum number of definitions to return (1–500). Default 100.
@@ -360,7 +368,7 @@ def list_alert_definitions(
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get a capacity overview for a cluster — remaining-capacity percentage and projected days-until-full per dimension (cpu/mem/diskspace), from the OnlineCapacityAnalytics metrics. Values are None while capacity analytics are still warming up on a fresh instance. Start here when assessing overall cluster capacity health; for absolute headroom values use get_remaining_capacity, and for just the exhaustion projections use get_time_remaining.
+    """[READ] Get a capacity overview for a cluster — the group-level remaining-capacity percentage (capacity_remaining_pct; the percentage metric only exists at group level) plus per-dimension (cpu/mem/diskspace) absolute remaining capacity and projected days-until-full, from the OnlineCapacityAnalytics metrics. Values are None while capacity analytics are still warming up on a fresh instance. Start here when assessing overall cluster capacity health; for absolute headroom values use get_remaining_capacity, and for just the exhaustion projections use get_time_remaining.
 
     Args:
         cluster_id: The cluster resource UUID (ClusterComputeResource, from list_resources).
@@ -377,7 +385,7 @@ def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_remaining_capacity(resource_id: str, target: Optional[str] = None) -> dict:
-    """[READ] Get remaining capacity headroom for a cluster or host — how much more workload fits before hitting limits. Returns one entry per capacity dimension (cpu, mem, diskspace), each with remaining_value (absolute, unit per dimension e.g. MHz/KB) and remaining_pct, from the OnlineCapacityAnalytics demand model. Values are None while capacity analytics warm up. Use get_capacity_overview for the combined percentage+days view, or get_time_remaining for projected days-until-full.
+    """[READ] Get remaining capacity headroom for a cluster or host — how much more workload fits before hitting limits. Returns the group-level capacity_remaining_pct (the percentage metric only exists at group level) plus one entry per capacity dimension (cpu, mem, diskspace) with remaining_value (absolute, unit per dimension e.g. MHz/KB), from the OnlineCapacityAnalytics demand model. Values are None while capacity analytics warm up. Use get_capacity_overview for the combined view, or get_time_remaining for projected days-until-full.
 
     Args:
         resource_id: The resource UUID — a ClusterComputeResource or HostSystem (from list_resources).
@@ -450,10 +458,11 @@ def list_anomalies(
     limit: int = 50,
     target: Optional[str] = None,
 ) -> list[dict]:
-    """[READ] Report per-resource anomaly counts (System Attributes|anomaly metric).
+    """[READ] Report per-resource anomaly counts (System Attributes|total_alarms metric).
 
     The public suite-api does not expose the UI's anomalous-metrics list; this
-    returns the count of currently anomalous metrics per resource. With
+    returns the Total Anomalies metric — active anomalies (symptoms, events,
+    DT violations) on the object and its children. With
     resource_id: that resource's count. Without: scans up to `limit` VMs and
     returns those with non-zero counts, sorted descending. For root cause,
     follow up with list_alerts(resource_id=...). One stats call per VM when
@@ -526,6 +535,8 @@ def list_collector_groups(target: Optional[str] = None) -> list[dict]:
 
     Collectors are remote agents that gather metrics from vSphere and other adapters.
     Check this when resources appear missing from Aria Operations or metrics are stale.
+    Groups list member collector IDs; details (name, state UP/DOWN, local) are
+    enriched via one extra collectors call.
 
     Args:
         target: Optional Aria Operations target name from config. Uses default if omitted.
@@ -587,8 +598,8 @@ def create_alert_definition(
         description: Human-readable description of when/why this alert fires.
         resource_kind: Resource kind this alert applies to: VirtualMachine,
             HostSystem, ClusterComputeResource, Datastore.
-        symptom_definition_ids: List of symptom definition UUIDs. ANY one symptom
-            firing will trigger the alert.
+        symptom_definition_ids: List of symptom definition UUIDs. Any one
+            symptom firing triggers (OR across symptom ids).
         criticality: Alert severity: INFORMATION, WARNING, IMMEDIATE, CRITICAL.
         adapter_kind: Adapter kind key. Default VMWARE (vSphere adapter).
         target: Optional Aria Operations target name from config. Uses default if omitted.
@@ -643,17 +654,30 @@ def set_alert_definition_state(
 @vmware_tool(risk_level="medium")
 def delete_alert_definition(
     definition_id: str,
+    confirmed: bool = False,
     target: Optional[str] = None,
 ) -> dict:
-    """[WRITE] Permanently delete an alert definition.
+    """[WRITE] Permanently delete an alert definition. Irreversible.
 
     This WRITE operation removes the alert definition from Aria Operations.
     Active alerts generated by this definition will not be affected.
+    Default confirmed=False returns a preview without making any change.
 
     Args:
         definition_id: Alert definition UUID to delete.
+        confirmed: Must be True to actually delete. Default False = preview only.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
+    if not confirmed:
+        return {
+            "preview": True,
+            "action": "delete_alert_definition",
+            "definition_id": definition_id,
+            "message": (
+                f"[preview] Would permanently delete alert definition {definition_id}. "
+                "Re-invoke with confirmed=True to execute."
+            ),
+        }
     try:
         from vmware_aria.ops.alerts import delete_alert_definition as _delete
 
@@ -774,14 +798,26 @@ def get_report(
 @vmware_tool(risk_level="medium")
 def delete_report(
     report_id: str,
+    confirmed: bool = False,
     target: Optional[str] = None,
 ) -> dict:
-    """[WRITE] Permanently delete a generated report artifact from Aria Operations. Removes only the generated report instance and its downloadable output — the report definition and any schedules remain intact; re-run generate_report to recreate it. Deletion is irreversible and is recorded in the local audit log (~/.vmware/audit.db). Returns an error if the report_id does not exist; use list_reports to find valid UUIDs first.
+    """[WRITE] Permanently delete a generated report artifact from Aria Operations. Removes only the generated report instance and its downloadable output — the report definition and any schedules remain intact; re-run generate_report to recreate it. Deletion is irreversible and is recorded in the local audit log (~/.vmware/audit.db). Returns an error if the report_id does not exist; use list_reports to find valid UUIDs first. Default confirmed=False returns a preview without deleting.
 
     Args:
         report_id: The report UUID to delete (from generate_report or list_reports).
+        confirmed: Must be True to actually delete. Default False = preview only.
         target: Optional Aria Operations target name from config. Uses default if omitted.
     """
+    if not confirmed:
+        return {
+            "preview": True,
+            "action": "delete_report",
+            "report_id": report_id,
+            "message": (
+                f"[preview] Would permanently delete report {report_id}. "
+                "Re-invoke with confirmed=True to execute."
+            ),
+        }
     try:
         from vmware_aria.ops.reports import delete_report as _delete
 

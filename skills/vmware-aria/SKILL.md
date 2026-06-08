@@ -16,7 +16,7 @@ metadata: {"openclaw":{"requires":{"env":["VMWARE_ARIA_CONFIG"],"bins":["vmware-
 compatibility: >
   vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). All write operations audited to ~/.vmware/audit.db.
   Credentials: Each Aria Operations target requires a per-target password env var in ~/.vmware-aria/.env following the pattern VMWARE_<TARGET_NAME_UPPER>_PASSWORD. Passwords are never logged or echoed.
-  Read-heavy: 21 of 27 tools are read-only. Write operations limited to alert acknowledge/cancel and report management.
+  Read-heavy: 20 of 27 tools are read-only. Write operations limited to alert acknowledge/cancel, alert definition management, and report management.
   No webhooks, no outbound network calls, no guest operations. Local only: stdio MCP + Aria Operations REST API (HTTPS 443).
   Transitive dependencies: Only vmware-policy (audit/policy). No post-install scripts or background services.
 ---
@@ -43,7 +43,7 @@ VMware Aria Operations (vRealize Operations) AI-assisted monitoring — 27 MCP t
 | **Anomaly** | list anomalies, risk badge | 2 |
 | **Health** | Aria platform health, collector group status | 2 |
 
-**Total**: 27 tools (23 read-only + 4 write)
+**Total**: 27 tools (20 read-only + 7 write)
 
 ## Quick Install
 
@@ -134,17 +134,17 @@ vmware-aria doctor
 
 ### Post-Incident: Create Detection Alert (RCA Follow-up)
 
-After resolving an incident, create an early-warning alert to prevent recurrence:
+After resolving an incident, create an early-warning alert to prevent recurrence. Alert definition management is **MCP-only** (no CLI subcommands):
 
-1. Find matching symptom definition → `vmware-aria alert symptom-definitions --name <keyword>`
-2. Create alert definition referencing symptoms → `vmware-aria alertdef create --name "Gold VM CPU Contention" --resource-kind VirtualMachine --symptom-ids <id1>,<id2> --criticality IMMEDIATE`
-3. Verify it appears in definitions → `vmware-aria alertdef list --name "Gold VM CPU"`
-4. Enable it → `vmware-aria alertdef enable <definition-id>`
+1. Find matching symptom definitions → MCP `list_symptom_definitions` (filter by `name_filter` / `resource_kind`)
+2. Create alert definition referencing symptoms → MCP `create_alert_definition` with name, resource_kind, symptom_definition_ids, criticality (any one symptom firing triggers the alert)
+3. Verify it appears in definitions → `vmware-aria alert definitions --name "Gold VM CPU"` (criticality shown is the max severity across the definition's states)
+4. Enable or disable later → MCP `set_alert_definition_state`
 
 ### Generate Capacity Report
 
 1. Find report template → `vmware-aria report definitions --name "Capacity"`
-2. Trigger report generation → `vmware-aria report generate <definition-id>`
+2. Trigger report generation → `vmware-aria report generate <definition-id> --resources <resource-id>` (the Report API requires at least one resource UUID)
 3. Poll until completed → `vmware-aria report get <report-id>` (repeat until `status == COMPLETED`)
 4. Download via the returned `download_url` (PDF) or `csv_url`
 5. Clean up → `vmware-aria report delete <report-id>`
@@ -166,7 +166,7 @@ vmware-aria resource top --target lab
 | Cloud models (Claude, GPT-4o) | Either | MCP gives structured JSON I/O |
 | Automated pipelines | **MCP** | Type-safe parameters, structured output |
 
-## MCP Tools (27 — 21 read, 6 write)
+## MCP Tools (27 — 20 read, 7 write)
 
 All MCP tools accept an optional `target` parameter to select which Aria Operations instance to connect to.
 
@@ -177,8 +177,8 @@ All MCP tools accept an optional `target` parameter to select which Aria Operati
 | | `get_resource_metrics` | Read | Fetch time-series metric stats for any resource |
 | | `get_resource_health` | Read | Get health badge score (0–100) |
 | | `get_top_consumers` | Read | Rank resources by CPU, memory, disk, or network usage |
-| Alerts | `list_alerts` | Read | List active alerts with criticality and resource info |
-| | `get_alert` | Read | Get alert details: symptoms and recommendations |
+| Alerts | `list_alerts` | Read | List active alerts with criticality and resource ID (resolve names via `get_resource`) |
+| | `get_alert` | Read | Get alert details with contributing symptoms (recommendations live on the alert definition) |
 | | `acknowledge_alert` | **Write** | Mark an alert as acknowledged (does not close it) |
 | | `cancel_alert` | **Write** | Cancel (dismiss) an active alert |
 | | `list_alert_definitions` | Read | List alert templates configured in Aria Ops |
@@ -186,7 +186,7 @@ All MCP tools accept an optional `target` parameter to select which Aria Operati
 | | `create_alert_definition` | **Write** | Create new alert definition from symptom definition IDs |
 | | `set_alert_definition_state` | **Write** | Enable or disable an alert definition |
 | | `delete_alert_definition` | **Write** | Delete an alert definition permanently |
-| Capacity | `get_capacity_overview` | Read | Cluster capacity recommendations from Aria |
+| Capacity | `get_capacity_overview` | Read | Group-level remaining % + per-dimension headroom and days-until-full |
 | | `get_remaining_capacity` | Read | Remaining CPU, memory, disk before hitting limits |
 | | `get_time_remaining` | Read | Days until cluster capacity is exhausted |
 | | `list_rightsizing_recommendations` | Read | VMs to resize: over/under-provisioned |
@@ -195,12 +195,12 @@ All MCP tools accept an optional `target` parameter to select which Aria Operati
 | | `list_reports` | Read | List generated reports, optionally by definition |
 | | `get_report` | Read | Poll report status + get PDF/CSV download URLs |
 | | `delete_report` | **Write** | Delete a generated report |
-| Anomaly | `list_anomalies` | Read | Machine-learning anomalies across monitored resources |
+| Anomaly | `list_anomalies` | Read | Per-resource anomaly counts (System Attributes\|total_alarms metric) |
 | | `get_resource_riskbadge` | Read | Risk score (0–100): likelihood of future problems |
-| Health | `get_aria_health` | Read | Aria platform internal services health |
+| Health | `get_aria_health` | Read | Aria platform node status (ONLINE/OFFLINE) |
 | | `list_collector_groups` | Read | Collector agents status and connectivity |
 
-**Read/write split**: 21 read-only, 6 write. All write operations are audit-logged to `~/.vmware/audit.db` (via vmware-policy).
+**Read/write split**: 20 read-only, 7 write. All write operations are audit-logged to `~/.vmware/audit.db` (via vmware-policy).
 
 ## CLI Quick Reference
 
@@ -220,13 +220,9 @@ vmware-aria alert acknowledge <alert-id>
 vmware-aria alert cancel <alert-id>
 vmware-aria alert definitions [--name <filter>]
 
-# Alert Definitions (create/manage alert templates)
-vmware-aria alertdef symptom-definitions [--name <filter>] [--resource-kind VirtualMachine]
-vmware-aria alertdef create --name <name> --description <desc> --resource-kind <kind> --symptom-ids <id1,id2> --criticality WARNING|IMMEDIATE|CRITICAL
-vmware-aria alertdef list [--name <filter>]
-vmware-aria alertdef enable <definition-id>
-vmware-aria alertdef disable <definition-id>
-vmware-aria alertdef delete <definition-id>
+# Alert Definitions: creation/enable/disable/delete and symptom-definition
+# lookup are MCP-only tools (list_symptom_definitions, create_alert_definition,
+# set_alert_definition_state, delete_alert_definition) — no CLI subcommands.
 
 # Capacity
 vmware-aria capacity overview <cluster-id>
@@ -236,7 +232,7 @@ vmware-aria capacity rightsizing [--resource-id <vm-id>]
 
 # Reports (async: generate → poll get → download → delete)
 vmware-aria report definitions [--name <filter>]
-vmware-aria report generate <definition-id> [--resource-ids <id1,id2>]
+vmware-aria report generate <definition-id> --resources <id1,id2>   # at least one resource UUID required
 vmware-aria report list [--definition-id <id>]
 vmware-aria report get <report-id>        # poll until status == COMPLETED; shows download_url
 vmware-aria report delete <report-id>
@@ -282,7 +278,7 @@ The token acquisition request failed. Verify:
 
 ### Resources appear missing from list_resources
 
-The collector agent may be offline. Check `list_collector_groups` for any collectors in a non-RUNNING state. Restart the affected collector from the Aria Ops UI under Administration > Collector Groups.
+The collector agent may be offline. Check `list_collector_groups` for any collectors in a DOWN state. Restart the affected collector from the Aria Ops UI under Administration > Collector Groups.
 
 ### Metrics return empty data
 
@@ -298,9 +294,9 @@ Variable names follow the pattern `VMWARE_ARIA_<TARGET_NAME_UPPER>_PASSWORD` whe
 
 ## Safety
 
-- **Read-heavy**: 21 of 27 tools are read-only
+- **Read-heavy**: 20 of 27 tools are read-only
 - **Audit logging**: Write operations logged to `~/.vmware/audit.db` (SQLite WAL, via vmware-policy) with timestamp, user, target, operation, and result
-- **Token expiry handling**: OpsToken refreshed automatically 60 seconds before expiry (30-minute validity window)
+- **Token expiry handling**: vRealizeOpsToken re-acquired automatically 60 seconds before expiry (6-hour sliding validity, extended on each call)
 - **Prompt injection defense**: API text values sanitized via `_sanitize()` — strips control characters, truncates to 500 chars
 - **Credential safety**: Passwords loaded only from environment variables (`.env` file), never from `config.yaml`
 - **Input validation**: resource_id and alert_id validated before API calls; criticality values validated against known enum
@@ -333,13 +329,13 @@ AI Agent (Claude Code / Goose / Cursor)
   | reads SKILL.md
 vmware-aria CLI or MCP server (stdio transport)
   | Aria Operations Suite API (REST/JSON over HTTPS)
-  | POST /suite-api/api/auth/token/acquire → OpsToken
+  | POST /suite-api/api/auth/token/acquire → vRealizeOpsToken
 Aria Operations Manager
   |
 VMs / Hosts / Clusters / Datastores / Alerts / Capacity
 ```
 
-The MCP server uses stdio transport (local only, no network listener). Connections to Aria Ops use HTTPS on port 443 with OpsToken authentication (30-minute token validity, auto-refreshed).
+The MCP server uses stdio transport (local only, no network listener). Connections to Aria Ops use HTTPS on port 443 with vRealizeOpsToken authentication (6-hour sliding token validity, auto-refreshed).
 
 ## Audit & Safety
 

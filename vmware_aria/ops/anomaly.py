@@ -4,8 +4,9 @@
 the previously used /anomalies and /resources/{id}/anomalies paths never
 existed (the UI's "anomalous metrics" view is not part of the public API),
 and /resources/{id}/badge/* endpoints don't exist either. The real signals
-are the "System Attributes|anomaly" metric (active-anomaly count per
-resource) and the badges[] array on the ResourceDto.
+are the "System Attributes|total_alarms" Total Anomalies metric (counts
+active anomalies — symptoms, events, and DT violations on the object and
+its children) and the badges[] array on the ResourceDto.
 
 All API responses pass through sanitize() to strip control characters.
 """
@@ -22,7 +23,10 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger("vmware-aria.ops.anomaly")
 
-_ANOMALY_STAT_KEY = "System Attributes|anomaly"
+# Total Anomalies metric wire key — "System Attributes|anomaly" does not
+# exist; the metric counts active anomalies (symptoms/events/DT violations
+# on the object and its children).
+_TOTAL_ANOMALIES_STAT_KEY = "System Attributes|total_alarms"
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +42,9 @@ def list_anomalies(
     """Report per-resource anomaly counts from the System Attributes metric.
 
     The public suite-api does not expose the UI's anomalous-metrics list;
-    the available signal is the "System Attributes|anomaly" metric (count of
-    currently anomalous metrics per resource). With resource_id, returns the
+    the available signal is the "System Attributes|total_alarms" Total Anomalies metric (count
+    of active anomalies — symptoms, events, DT violations — on the object
+    and its children). With resource_id, returns the
     count for that resource; without it, scans up to ``limit`` VirtualMachine
     resources and returns those with a non-zero anomaly count, sorted
     descending. For root-cause detail, follow up with get_alert/list_alerts.
@@ -71,7 +76,7 @@ def list_anomalies(
         if not rid:
             continue
         data = client.get(
-            f"/resources/{rid}/stats/latest", params={"statKey": _ANOMALY_STAT_KEY}
+            f"/resources/{rid}/stats/latest", params={"statKey": _TOTAL_ANOMALIES_STAT_KEY}
         )
         count = None
         for value_entry in data.get("values", []):
@@ -85,7 +90,7 @@ def list_anomalies(
                 "resource_id": sanitize(rid),
                 "resource_name": name,
                 "anomaly_count": count,
-                "metric_key": _ANOMALY_STAT_KEY,
+                "metric_key": _TOTAL_ANOMALIES_STAT_KEY,
             }
         )
 

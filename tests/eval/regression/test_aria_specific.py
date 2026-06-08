@@ -83,7 +83,13 @@ def test_top_consumers_uses_get_stats_topn() -> None:
             "resourceStatGroups": [
                 {
                     "groupKey": "vm-1",
-                    "resourceStats": [{"statKey": {"key": "cpu|usage_average"}, "data": [42.0]}],
+                    # spec shape: data nests under `stat`
+                    "resourceStats": [
+                        {
+                            "resourceId": "vm-1",
+                            "stat": {"statKey": {"key": "cpu|usage_average"}, "data": [42.0]},
+                        }
+                    ],
                 }
             ]
         },
@@ -211,7 +217,7 @@ def test_list_reports_filters_definition_client_side() -> None:
     }
     results = list_reports(client, definition_id="want")
 
-    params = client.get.call_args.kwargs["params"]
+    params = client.get.call_args.kwargs.get("params") or {}
     assert "reportDefinitionId" not in params  # not a valid API param
     assert [r["id"] for r in results] == ["r1"]
 

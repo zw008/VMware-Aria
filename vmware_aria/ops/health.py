@@ -56,37 +56,69 @@ def get_aria_health(client: AriaClient) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _collectors_by_id(client: AriaClient) -> dict[str, dict]:
+    """Index GET /collectors results by string id.
+
+    Collector model = {id, uuId, name, state (UP/DOWN), local,
+    adapterInstanceIds} — there is no collectorType or hostname field.
+    Failures degrade to an empty index (logged) so group listing still works.
+    """
+    try:
+        data = client.get("/collectors")
+    except Exception as exc:
+        _log.warning("Could not fetch collectors for group enrichment: %s", exc)
+        return {}
+
+    items = data.get("collector")
+    if not isinstance(items, list):
+        items = data.get("collectors")
+    if not isinstance(items, list):
+        items = []
+    return {str(c.get("id", "")): c for c in items if isinstance(c, dict)}
+
+
 def list_collector_groups(client: AriaClient) -> list[dict]:
     """List collector groups and their member collector status.
 
-    Collector groups manage the remote collection agents (vRealize Operations
-    Collector) that gather metrics from monitored environments.
+    CollectorGroup = {id, name, description, collectorId: [ints],
+    systemDefined} — members are an array of collector IDs, not objects
+    (2026-06-08 spec audit). Member details (name, state UP/DOWN, local)
+    are enriched via one extra GET /collectors call.
 
     Args:
         client: Authenticated Aria Operations API client.
 
     Returns:
-        List of collector group dicts with name, id, and member collector status.
+        List of collector group dicts with id, name, description,
+        system_defined, collector_count, and member collectors
+        (id, name, state, local).
     """
     data = client.get("/collectorgroups")
     groups = data.get("collectorGroups", [])
+    collectors = _collectors_by_id(client) if groups else {}
 
-    return [
-        {
-            "id": sanitize(g.get("id", "")),
-            "name": sanitize(g.get("name", "")),
-            "description": sanitize(g.get("description", ""), max_len=300),
-            "collector_count": len(g.get("collectors", [])),
-            "collectors": [
+    results = []
+    for g in groups:
+        member_ids = g.get("collectorId") or []
+        members = []
+        for cid in member_ids:
+            c = collectors.get(str(cid), {})
+            members.append(
                 {
-                    "id": sanitize(c.get("id", "")),
+                    "id": sanitize(str(cid)),
                     "name": sanitize(c.get("name", "")),
                     "state": sanitize(c.get("state", "")),
-                    "type": sanitize(c.get("collectorType", "")),
-                    "host": sanitize(c.get("hostname", "")),
+                    "local": c.get("local", None),
                 }
-                for c in g.get("collectors", [])
-            ],
-        }
-        for g in groups
-    ]
+            )
+        results.append(
+            {
+                "id": sanitize(g.get("id", "")),
+                "name": sanitize(g.get("name", "")),
+                "description": sanitize(g.get("description", ""), max_len=300),
+                "system_defined": g.get("systemDefined", None),
+                "collector_count": len(member_ids),
+                "collectors": members,
+            }
+        )
+    return results

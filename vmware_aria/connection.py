@@ -1,10 +1,13 @@
 """Aria Operations REST API client with token-based authentication.
 
 Authenticates via POST /suite-api/api/auth/token/acquire with username/password/authSource.
-Stores the OpsToken and re-acquires it automatically near expiry. Per the official
-spec, the token has a 6-hour sliding validity ("extended after each call and set to
-6 hours from the last call") and the acquire response's `validity` field is an epoch
-timestamp in milliseconds — NOT a duration.
+Stores the acquired token and re-acquires it automatically near expiry. Subsequent
+requests carry it as ``Authorization: vRealizeOpsToken <token>`` — the documented
+header literal on all versions including 8.6 (the ``OpsToken`` literal only appears
+in newer Aria-branded docs and 401s on 8.6). Per the official spec, the token has a
+6-hour sliding validity ("extended after each call and set to 6 hours from the last
+call") and the acquire response's `validity` field is an epoch timestamp in
+milliseconds — NOT a duration.
 
 Base URL pattern: https://<aria-host>/suite-api/api/
 """
@@ -97,12 +100,12 @@ class AriaClient:
             self._acquire_token()
 
     def _headers(self) -> dict[str, str]:
-        """Request headers with OpsToken authorization."""
+        """Request headers with vRealizeOpsToken authorization."""
         self._ensure_token()
         return {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "Authorization": f"OpsToken {self._token}",
+            "Authorization": f"vRealizeOpsToken {self._token}",
         }
 
     # ------------------------------------------------------------------
@@ -159,13 +162,15 @@ class AriaClient:
             return False
 
     def close(self) -> None:
-        """Release the OpsToken and close the HTTP client."""
+        """Release the auth token and close the HTTP client."""
         if self._token:
             try:
+                # POST /auth/token/release takes no body — the token to
+                # release is identified by the Authorization header.
                 self._client.post(
                     "/auth/token/release",
                     headers=self._headers(),
-                    json={"token": self._token},
+                    json=None,
                 )
             except Exception:
                 pass

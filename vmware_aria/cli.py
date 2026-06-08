@@ -242,10 +242,12 @@ def alert_list(
     table.add_column("Name", style="bold")
     table.add_column("Criticality")
     table.add_column("Status")
-    table.add_column("Resource")
+    table.add_column("Resource ID")
 
+    # Alert model has no resourceName — show resourceId (resolve names via
+    # `vmware-aria resource get <id>`).
     for a in items:
-        table.add_row(a["id"][:36], a["name"][:60], a["criticality"], a["status"], a["resource_name"][:40])
+        table.add_row(a["id"][:36], a["name"][:60], a["criticality"], a["status"], a["resource_id"][:36])
 
     console.print(table)
 
@@ -318,10 +320,12 @@ def alert_definitions(
     table.add_column("Name", style="bold")
     table.add_column("Criticality")
     table.add_column("Resource Kind")
-    table.add_column("Enabled")
+    table.add_column("Impact")
 
+    # AlertDefinition has no top-level active field; criticality is the max
+    # severity across the definition's states[].
     for d in items:
-        table.add_row(d["name"][:60], d["criticality"], d["resource_kind"], str(d["enabled"]))
+        table.add_row(d["name"][:60], d["criticality"], d["resource_kind"], d["impact"])
 
     console.print(table)
 
@@ -416,7 +420,7 @@ def anomaly_list(
     client, _ = _get_connection(target, config)
     items = list_anomalies(client, resource_id=resource_id, limit=limit)
 
-    table = Table(title="Anomaly Counts (System Attributes|anomaly)", show_lines=False)
+    table = Table(title="Anomaly Counts (System Attributes|total_alarms)", show_lines=False)
     table.add_column("Resource", style="bold")
     table.add_column("Anomaly Count")
 
@@ -475,16 +479,18 @@ def health_collectors(
     client, _ = _get_connection(target, config)
     groups = list_collector_groups(client)
 
+    # Collector model has no collectorType/hostname; state is UP/DOWN and
+    # `local` marks the built-in collector on the Aria node.
     for g in groups:
         console.print(f"\n[bold]{g['name']}[/bold] (id: {g['id']}) — {g['collector_count']} collector(s)")
         table = Table(show_header=True, show_lines=False)
+        table.add_column("ID")
         table.add_column("Name")
         table.add_column("State")
-        table.add_column("Type")
-        table.add_column("Host")
+        table.add_column("Local")
         for c in g["collectors"]:
-            state_style = "green" if c["state"] == "RUNNING" else "red"
-            table.add_row(c["name"], f"[{state_style}]{c['state']}[/{state_style}]", c["type"], c["host"])
+            state_style = "green" if c["state"] == "UP" else "red"
+            table.add_row(c["id"], c["name"], f"[{state_style}]{c['state']}[/{state_style}]", str(c["local"]))
         console.print(table)
 
 

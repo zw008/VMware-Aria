@@ -213,8 +213,8 @@ The docker-compose.yml mounts `~/.vmware-aria` read-only into the container.
 - `.env` file must be `chmod 600` (owner read/write only)
 - Use `verify_ssl: true` in production; only disable for lab environments
 - The MCP server uses stdio transport — it runs locally only, no network listener
-- Audit log at `~/.vmware/audit.db` (SQLite WAL, via vmware-policy) records all write operations (acknowledge, cancel)
-- Token expires after 30 minutes; the client auto-refreshes 60 seconds before expiry
+- Audit log at `~/.vmware/audit.db` (SQLite WAL, via vmware-policy) records all write operations (alert acknowledge/cancel, alert definition management, report generate/delete)
+- Tokens have a 6-hour sliding validity (extended on each call); the client re-acquires automatically 60 seconds before expiry. Requests carry `Authorization: vRealizeOpsToken <token>`
 
 ---
 

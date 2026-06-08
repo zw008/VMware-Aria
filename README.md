@@ -14,17 +14,19 @@ AI-assisted monitoring and capacity planning for VMware Aria Operations (vRealiz
 
 ## Overview
 
-`vmware-aria` exposes 18 MCP tools for interacting with Aria Operations through natural language AI agents (Claude Code, Cursor, Goose, etc.):
+`vmware-aria` exposes 27 MCP tools for interacting with Aria Operations through natural language AI agents (Claude Code, Cursor, Goose, etc.):
 
 | Category | Tools | Type |
 |----------|-------|------|
 | **Resources** | list, get, metrics, health badge, top consumers | Read-only (5) |
 | **Alerts** | list, get, acknowledge, cancel, definitions | Read + 2 Write (5) |
+| **Alert Definitions** | symptom definitions, create, enable/disable, delete | Read + 3 Write (4) |
 | **Capacity** | overview, remaining, time-remaining, rightsizing | Read-only (4) |
+| **Reports** | definitions, generate, list, get, delete | Read + 2 Write (5) |
 | **Anomaly** | list anomalies, risk badge | Read-only (2) |
 | **Health** | platform health, collector groups | Read-only (2) |
 
-**Total**: 18 tools — 16 read-only, 2 write (acknowledge/cancel alerts)
+**Total**: 27 tools — 20 read-only, 7 write
 
 ## Quick Start
 
@@ -113,14 +115,14 @@ Then use natural language:
 
 ## Authentication
 
-Aria Operations uses **OpsToken** authentication:
+Aria Operations uses **vRealizeOpsToken** authentication:
 
 ```
 POST /suite-api/api/auth/token/acquire
 {"username": "admin", "password": "...", "authSource": "LOCAL"}
 → {"token": "abc123", "validity": 1765182896000}  # validity = expiry epoch ms
 
-Subsequent requests: Authorization: OpsToken abc123
+Subsequent requests: Authorization: vRealizeOpsToken abc123
 ```
 
 Tokens have a 6-hour sliding validity (extended on each call, per the official spec); the client re-acquires automatically 60 seconds before expiry. The `validity` field is the expiry timestamp in epoch milliseconds, not a duration.
@@ -133,7 +135,7 @@ User (natural language)
 AI Agent (Claude Code / Goose / Cursor)
   ↓  [reads SKILL.md]
 vmware-aria MCP server (stdio transport)
-  ↓  [HTTPS + OpsToken]
+  ↓  [HTTPS + vRealizeOpsToken]
 Aria Operations Suite API
   ↓
 VMs / Hosts / Clusters / Alerts / Capacity
@@ -153,7 +155,7 @@ VMs / Hosts / Clusters / Alerts / Capacity
 ## Security
 
 - Passwords loaded from env vars or `.env` file, never from `config.yaml`
-- Write operations (acknowledge/cancel alert) audit-logged to `~/.vmware-aria/audit.log`
+- Write operations (alert acknowledge/cancel, alert definition management, report generate/delete) audit-logged to `~/.vmware/audit.db` (MCP, via vmware-policy) and `~/.vmware-aria/audit.log` (CLI)
 - API responses sanitized (control chars stripped, 500-char limit) to prevent prompt injection
 - Supports self-signed certificates (`verify_ssl: false`) for lab environments
 
