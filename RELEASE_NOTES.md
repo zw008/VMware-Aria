@@ -1,3 +1,41 @@
+## v1.5.32 (2026-06-08) — Second-pass spec audit: auth header, Alert model, capacity statKeys
+
+Follow-up to v1.5.31: a full-detail review against official sources found the
+response-field layer (untouched by v1.5.31's endpoint fixes) also contained
+invented fields, plus an auth-header compatibility bug.
+
+### Fixed
+- **Auth**: `Authorization: vRealizeOpsToken <token>` — the previous `OpsToken`
+  spelling is only documented in Aria-branded (8.16+) guides and 401s on 8.6.
+- **Alerts**: criticality read from `alertLevel`, name from `alertDefinitionName`
+  (the previously parsed `alertName`/`criticality`/`resourceName`/`info` fields
+  don't exist in the Alert model); triggered symptoms now fetched from
+  `GET /alerts/contributingsymptoms`; alert-definition severity derived from
+  `states[].severity`; symptom filter param corrected to `resourceKind`.
+- **Resources**: `badges[]` array parsing in list_resources/get_resource
+  (`badge` singular never existed); Top-N values read from the nested
+  `resourceStats[].stat` object; topn candidates capped at 100 (URL length).
+- **Capacity**: remaining-capacity percentage exists only at group level
+  (`OnlineCapacityAnalytics|capacityRemainingPercentage`); VM rightsizing keys
+  have no `demand` segment; anomaly count metric is `System Attributes|total_alarms`.
+- **Collector groups**: parse `collectorId` int array + enrich via `GET /collectors`
+  (the previously parsed `collectors[]` objects don't exist on CollectorGroup).
+- **Reports**: timestamps from `completionTime`; ReportDefinition `subject` is an
+  array of strings (old object access raised AttributeError); list limit applied
+  client-side (no pageSize param on GET /reports).
+- **Robustness**: empty `resourceStatusStates` no longer raises IndexError;
+  token release sends no body; create_alert_definition uses doc-verified
+  `aggregation: ALL` + `symptomSetOperator: OR`.
+
+### Safety
+- MCP `delete_alert_definition` / `delete_report` gained `confirmed=False`
+  preview gates (matching acknowledge/cancel).
+- Safety test rewritten to assert the real three-layer guard architecture
+  (ops audit / MCP confirmed / CLI typer.confirm).
+
+### Tests & docs
+- +23 shape regression tests (74 total green); README/SKILL/references synced.
+
 ## v1.5.31 (2026-06-08) — API layer rewritten against the official suite-api spec
 
 An external user ran the MCP against a real Aria Operations instance and reported
