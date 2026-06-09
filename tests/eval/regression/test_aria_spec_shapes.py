@@ -549,3 +549,44 @@ def test_list_reports_no_page_size_param_and_client_side_limit() -> None:
     params = client.get.call_args.kwargs.get("params") or {}
     assert "pageSize" not in params, "GET /reports has no pageSize param"
     assert len(results) == 2, "limit must be applied client-side after the filter"
+
+
+# ── H12: /deployment/node/status 503 is a health signal, not a crash ──
+#
+# 2026-06-09 user report (#6): `vmware-aria health status` aborted with an
+# httpx HTTPStatusError traceback when the node returned 503. The endpoint
+# returns 503 while services are not ONLINE, so a health check must surface
+# that as OFFLINE instead of propagating the error.
+
+
+def _http_status_error(code: int) -> "httpx.HTTPStatusError":
+    import httpx
+
+    request = httpx.Request("GET", "https://h/suite-api/api/deployment/node/status")
+    response = httpx.Response(code, request=request)
+    return httpx.HTTPStatusError(f"{code}", request=request, response=response)
+
+
+def test_get_aria_health_treats_503_as_offline() -> None:
+    from vmware_aria.ops.health import get_aria_health
+
+    client = _client()
+    client.get.side_effect = _http_status_error(503)
+
+    result = get_aria_health(client)
+    assert result["healthy"] is False
+    assert result["overall_status"] == "OFFLINE"
+    assert result["system_time_ms"] is None
+    assert "503" in result["details"]
+
+
+def test_get_aria_health_reraises_non_503_errors() -> None:
+    import pytest
+
+    from vmware_aria.ops.health import get_aria_health
+
+    client = _client()
+    client.get.side_effect = _http_status_error(500)
+
+    with pytest.raises(Exception):
+        get_aria_health(client)

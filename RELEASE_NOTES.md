@@ -1,3 +1,20 @@
+## v1.5.33 (2026-06-09) — health status survives a 503 from an offline node
+
+### Fixed
+- **Health**: `vmware-aria health status` no longer aborts with an httpx
+  `HTTPStatusError` traceback when `GET /deployment/node/status` returns HTTP
+  503. That 503 is the documented "node not ONLINE" signal (the suite-api
+  gateway runs on the same node it reports on), so the health check now
+  surfaces it as a structured `OFFLINE` result with a remediation hint
+  ("platform is starting up … retry") instead of crashing — a health check
+  must work precisely when the platform is unhealthy. External user report
+  ([#6](https://github.com/zw008/VMware-Aria/issues/6)). Non-503 errors still
+  propagate.
+
+### Tests
+- `tests/eval/regression/test_aria_spec_shapes.py`: H12 pins the 503→OFFLINE
+  shape and asserts non-503 statuses are re-raised.
+
 ## v1.5.32 (2026-06-08) — Second-pass spec audit: auth header, Alert model, capacity statKeys
 
 Follow-up to v1.5.31: a full-detail review against official sources found the

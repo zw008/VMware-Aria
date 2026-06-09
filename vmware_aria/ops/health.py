@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import httpx
+
 from vmware_policy import sanitize
 
 if TYPE_CHECKING:
@@ -40,7 +42,27 @@ def get_aria_health(client: AriaClient) -> dict:
     # humanlyReadableSystemTime. The old code read invented fields
     # (clusterStatus.clusterVipAddress as "overall_status" — an IP address,
     # and a services[] array that does not exist). 2026-06-08 user report.
-    data = client.get("/deployment/node/status")
+    try:
+        data = client.get("/deployment/node/status")
+    except httpx.HTTPStatusError as exc:
+        # /deployment/node/status returns HTTP 503 while the node is still
+        # booting or one or more suite-api services are not yet ONLINE (the
+        # gateway is served by the same node it reports on). For a health
+        # check that 503 IS the answer — "platform not online" — not a
+        # transport failure to propagate as a traceback. 2026-06-09 user
+        # report (#6): the command crashed precisely when it was most needed.
+        if exc.response.status_code == 503:
+            return {
+                "overall_status": "OFFLINE",
+                "healthy": False,
+                "system_time_ms": None,
+                "details": (
+                    "Aria Operations returned HTTP 503 at /deployment/node/status — "
+                    "the platform is starting up or one or more services are not "
+                    "ONLINE. Wait for the cluster to finish booting and retry."
+                ),
+            }
+        raise
 
     status = sanitize(data.get("status", ""))
     return {

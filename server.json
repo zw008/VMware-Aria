@@ -7,12 +7,12 @@
     "url": "https://github.com/zw008/VMware-Aria",
     "source": "github"
   },
-  "version": "1.5.32",
+  "version": "1.5.33",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "vmware-aria",
-      "version": "1.5.32",
+      "version": "1.5.33",
       "transport": {
         "type": "stdio"
       }
