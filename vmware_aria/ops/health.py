@@ -8,9 +8,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import httpx
-
 from vmware_policy import sanitize
+
+from vmware_aria.connection import AriaApiError
 
 if TYPE_CHECKING:
     from vmware_aria.connection import AriaClient
@@ -43,15 +43,17 @@ def get_aria_health(client: AriaClient) -> dict:
     # (clusterStatus.clusterVipAddress as "overall_status" — an IP address,
     # and a services[] array that does not exist). 2026-06-08 user report.
     try:
-        data = client.get("/deployment/node/status")
-    except httpx.HTTPStatusError as exc:
+        # retries=0: for a health check a 503 IS the answer ("not ONLINE"), so
+        # don't spend the transient back-off retrying — return OFFLINE at once.
+        data = client.get("/deployment/node/status", retries=0)
+    except AriaApiError as exc:
         # /deployment/node/status returns HTTP 503 while the node is still
         # booting or one or more suite-api services are not yet ONLINE (the
         # gateway is served by the same node it reports on). For a health
         # check that 503 IS the answer — "platform not online" — not a
         # transport failure to propagate as a traceback. 2026-06-09 user
         # report (#6): the command crashed precisely when it was most needed.
-        if exc.response.status_code == 503:
+        if exc.status_code == 503:
             return {
                 "overall_status": "OFFLINE",
                 "healthy": False,

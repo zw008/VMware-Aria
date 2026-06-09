@@ -553,25 +553,25 @@ def test_list_reports_no_page_size_param_and_client_side_limit() -> None:
 
 # ── H12: /deployment/node/status 503 is a health signal, not a crash ──
 #
-# 2026-06-09 user report (#6): `vmware-aria health status` aborted with an
-# httpx HTTPStatusError traceback when the node returned 503. The endpoint
-# returns 503 while services are not ONLINE, so a health check must surface
-# that as OFFLINE instead of propagating the error.
+# 2026-06-09 user report (#6): `vmware-aria health status` aborted with a
+# traceback when the node returned 503. The endpoint returns 503 while
+# services are not ONLINE, so a health check must surface that as OFFLINE
+# instead of propagating the error. The client now raises AriaApiError.
 
 
-def _http_status_error(code: int) -> "httpx.HTTPStatusError":
-    import httpx
+def _aria_api_error(code: int) -> Exception:
+    from vmware_aria.connection import AriaApiError
 
-    request = httpx.Request("GET", "https://h/suite-api/api/deployment/node/status")
-    response = httpx.Response(code, request=request)
-    return httpx.HTTPStatusError(f"{code}", request=request, response=response)
+    return AriaApiError(
+        f"HTTP {code}", status_code=code, method="GET", path="/deployment/node/status"
+    )
 
 
 def test_get_aria_health_treats_503_as_offline() -> None:
     from vmware_aria.ops.health import get_aria_health
 
     client = _client()
-    client.get.side_effect = _http_status_error(503)
+    client.get.side_effect = _aria_api_error(503)
 
     result = get_aria_health(client)
     assert result["healthy"] is False
@@ -583,10 +583,11 @@ def test_get_aria_health_treats_503_as_offline() -> None:
 def test_get_aria_health_reraises_non_503_errors() -> None:
     import pytest
 
+    from vmware_aria.connection import AriaApiError
     from vmware_aria.ops.health import get_aria_health
 
     client = _client()
-    client.get.side_effect = _http_status_error(500)
+    client.get.side_effect = _aria_api_error(500)
 
-    with pytest.raises(Exception):
+    with pytest.raises(AriaApiError):
         get_aria_health(client)

@@ -1,3 +1,33 @@
+## v1.5.34 (2026-06-09) — teaching errors instead of tracebacks for every API call
+
+Generalizes the v1.5.33 health fix: the 503 crash was one instance of a
+systemic problem — every by-id call (`resource get`, `alert get`, `report
+get`, capacity/anomaly lookups, alert acknowledge/cancel/delete) raised a raw
+`httpx` traceback when given a bad UUID (404) or when the server returned 5xx.
+
+### Fixed
+- **All API errors are now actionable**: the connection layer translates every
+  non-2xx status and transport failure into an `AriaApiError` carrying the
+  status, path, and a remediation hint (e.g. a 404 says "verify the id — list
+  the parent collection first"). End users and agents see a clear line instead
+  of an httpx stack trace.
+- **Lightweight recovery**: transient gateway statuses (502/503/504) and
+  transport/timeout errors are retried once before giving up; a 401/403 still
+  triggers a single token re-acquisition. 4xx client errors are surfaced
+  immediately (not retried). The token re-acquire retry is now covered by the
+  same transport-error handling, so a connection drop during re-auth can no
+  longer leak a raw error.
+- **`is_alive()`**: a node returning 503 while booting is treated as "alive but
+  not ready" (the client + token still work), so `connect()` no longer
+  needlessly re-authenticates on every call during a cluster restart.
+- **`health status`** reads the 503 with no retry back-off (the 503 *is* the
+  OFFLINE answer), so it stays fast on an unhealthy platform.
+
+### Tests
+- New connection-layer regressions in `test_aria_specific.py`: 404→teaching
+  error, 503 retried exactly once, 4xx not retried, transport-error-after-reauth
+  wrapped, `is_alive` 503=alive / 401=dead. 82 tests pass; bandit 0 Medium+.
+
 ## v1.5.33 (2026-06-09) — health status survives a 503 from an offline node
 
 ### Fixed

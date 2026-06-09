@@ -27,6 +27,57 @@ _log = logging.getLogger("vmware-aria.connection")
 # Token validity buffer: refresh 60 seconds before actual expiry
 _EXPIRY_BUFFER_SEC = 60
 
+# Transient gateway statuses worth one automatic retry (the node may be busy
+# or a service may still be coming up). 4xx client errors are NOT retried.
+_TRANSIENT_STATUS = frozenset({502, 503, 504})
+_RETRY_DELAY_SEC = 2.0
+
+
+class AriaApiError(Exception):
+    """An Aria Operations suite-api call returned an error or failed to connect.
+
+    Carries a teaching message (status + path + how to fix) so end users see an
+    actionable line instead of a raw httpx traceback. ``status_code`` is None
+    for transport/timeout failures (no HTTP response was received).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        method: str | None = None,
+        path: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.method = method
+        self.path = path
+
+
+def _hint_for_status(status_code: int, path: str) -> str:
+    """Return a short, actionable remediation hint for an HTTP error status."""
+    if status_code == 404:
+        return (
+            f"Nothing exists at {path}. Verify the id — list the parent "
+            "collection first (e.g. `resource list`, `alert list`) and copy an "
+            "exact UUID."
+        )
+    if status_code == 400:
+        return "Bad request — check the parameters and payload for this call."
+    if status_code == 503:
+        return (
+            "The platform is starting up or one or more services are not "
+            "ONLINE. Wait for the cluster to finish booting and retry."
+        )
+    if status_code in (502, 504):
+        return "The node is busy or a gateway timed out — retry shortly."
+    if status_code >= 500:
+        return "Server-side error — retry shortly; check Aria Operations health."
+    if status_code in (401, 403):
+        return "Authentication/authorization failed — check the account and its role."
+    return "Check the request and try again."
+
 
 class AriaClient:
     """REST client for a single Aria Operations instance."""
@@ -112,14 +163,75 @@ class AriaClient:
     # HTTP methods
     # ------------------------------------------------------------------
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> dict:
-        """Single GET request. Returns parsed JSON response."""
-        resp = self._client.get(path, headers=self._headers(), params=params)
-        if resp.status_code in (401, 403):
-            _log.info("Auth error on GET, re-acquiring token...")
-            self._acquire_token()
-            resp = self._client.get(path, headers=self._headers(), params=params)
-        resp.raise_for_status()
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
+        retries: int = 1,
+    ) -> httpx.Response:
+        """Send one request, recovering from auth and transient failures.
+
+        Layered per the error-recovery contract: (1) transport/timeout and
+        transient gateway statuses (502/503/504) are retried once after a short
+        delay; (2) a 401/403 triggers a single token re-acquisition; (3) any
+        remaining error status is translated into an ``AriaApiError`` carrying a
+        teaching message, so callers never surface a raw httpx traceback. 4xx
+        client errors (e.g. 404 for a bad id) are NOT retried.
+        """
+        attempt = 0
+        reauthed = False
+        while True:
+            try:
+                resp = self._client.request(
+                    method, path, headers=self._headers(), params=params, json=json_data
+                )
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                if attempt < retries:
+                    attempt += 1
+                    time.sleep(_RETRY_DELAY_SEC)
+                    continue
+                raise AriaApiError(
+                    f"Aria Operations {method} {path} could not connect: {exc}. "
+                    "Check the host/port and network, then retry.",
+                    method=method,
+                    path=path,
+                ) from exc
+
+            if resp.status_code in (401, 403) and not reauthed:
+                # Re-acquire the token once, then re-issue through the top of
+                # the loop so the retry is covered by the same transport-error
+                # handling (the `reauthed` flag bounds this to a single retry).
+                _log.info("Auth error on %s %s, re-acquiring token...", method, path)
+                self._acquire_token()
+                reauthed = True
+                continue
+
+            if resp.status_code in _TRANSIENT_STATUS and attempt < retries:
+                attempt += 1
+                time.sleep(_RETRY_DELAY_SEC)
+                continue
+
+            if resp.status_code >= 400:
+                raise AriaApiError(
+                    f"Aria Operations {method} {path} returned HTTP "
+                    f"{resp.status_code}. {_hint_for_status(resp.status_code, path)}",
+                    status_code=resp.status_code,
+                    method=method,
+                    path=path,
+                )
+            return resp
+
+    def get(self, path: str, params: dict[str, Any] | None = None, *, retries: int = 1) -> dict:
+        """Single GET request. Returns parsed JSON response.
+
+        Pass retries=0 for probes where an error status is itself the answer
+        (e.g. a health check reading a 503 as "not ONLINE") to skip the
+        transient back-off.
+        """
+        resp = self._request("GET", path, params=params, retries=retries)
         return resp.json() if resp.content else {}
 
     def post(
@@ -129,35 +241,33 @@ class AriaClient:
         params: dict[str, Any] | None = None,
     ) -> dict:
         """POST request. Returns parsed JSON response."""
-        resp = self._client.post(path, headers=self._headers(), json=json_data, params=params)
-        if resp.status_code in (401, 403):
-            self._acquire_token()
-            resp = self._client.post(path, headers=self._headers(), json=json_data, params=params)
-        resp.raise_for_status()
+        resp = self._request("POST", path, params=params, json_data=json_data)
         return resp.json() if resp.content else {}
 
     def put(self, path: str, json_data: dict[str, Any] | None = None) -> dict:
         """PUT request. Returns parsed JSON response."""
-        resp = self._client.put(path, headers=self._headers(), json=json_data)
-        if resp.status_code in (401, 403):
-            self._acquire_token()
-            resp = self._client.put(path, headers=self._headers(), json=json_data)
-        resp.raise_for_status()
+        resp = self._request("PUT", path, json_data=json_data)
         return resp.json() if resp.content else {}
 
     def delete(self, path: str) -> None:
         """DELETE request."""
-        resp = self._client.delete(path, headers=self._headers())
-        if resp.status_code in (401, 403):
-            self._acquire_token()
-            resp = self._client.delete(path, headers=self._headers())
-        resp.raise_for_status()
+        self._request("DELETE", path)
 
     def is_alive(self) -> bool:
-        """Check if the connection is still valid by probing the deployment endpoint."""
+        """Check if the cached client + token are still usable.
+
+        A reachable node that returns 5xx (e.g. 503 while still booting) is
+        still "alive": the client and token work, the platform just isn't
+        ready, so there's no point dropping and rebuilding the connection. Only
+        auth failures (401/403) or transport errors mean the cached client is
+        stale. retries=0 keeps the probe snappy — no back-off on every
+        connect().
+        """
         try:
-            self.get("/deployment/node/status")
+            self._request("GET", "/deployment/node/status", retries=0)
             return True
+        except AriaApiError as exc:
+            return exc.status_code is not None and exc.status_code not in (401, 403)
         except Exception:
             return False
 

@@ -300,3 +300,152 @@ def test_anomaly_uses_stats_latest_not_invented_endpoints() -> None:
     client.get.return_value = {"values": []}
     list_anomalies(client, resource_id="res-1")
     assert client.get.call_args.args[0] == "/resources/res-1/stats/latest"
+
+
+# ── #6 follow-up: raw HTTP errors become teaching AriaApiError, not tracebacks
+#
+# The connection layer translates every non-2xx status (and transport
+# failures) into AriaApiError with a status_code + remediation hint, and
+# retries transient gateway statuses (502/503/504) exactly once. 4xx client
+# errors (e.g. a bad UUID) are surfaced immediately, not retried.
+
+
+def _conn(monkeypatch):
+    from vmware_aria.config import TargetConfig
+    from vmware_aria.connection import AriaClient
+
+    expiry_epoch_ms = int((time.time() + 6 * 3600) * 1000)
+
+    class TokenResp:
+        status_code = 200
+        content = b"{}"
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"token": "tok", "validity": expiry_epoch_ms}
+
+    # token acquisition on __init__ goes through httpx.Client.post
+    monkeypatch.setattr("httpx.Client.post", lambda self, *a, **k: TokenResp())
+    return AriaClient(TargetConfig(host="h", username="u"), "pw")
+
+
+def test_404_becomes_teaching_error_not_traceback(monkeypatch) -> None:
+    import httpx
+    import pytest
+
+    from vmware_aria.connection import AriaApiError
+
+    client = _conn(monkeypatch)
+    monkeypatch.setattr(
+        "httpx.Client.request",
+        lambda self, method, url, **k: httpx.Response(404, request=httpx.Request(method, url)),
+    )
+
+    with pytest.raises(AriaApiError) as exc_info:
+        client.get("/resources/bad-uuid")
+
+    err = exc_info.value
+    assert err.status_code == 404
+    assert "/resources/bad-uuid" in str(err)
+    assert "404" in str(err)
+    # the message must teach the fix, not just report the error
+    assert "list" in str(err).lower()
+
+
+def test_transient_503_retried_once_then_raises(monkeypatch) -> None:
+    import httpx
+    import pytest
+
+    from vmware_aria.connection import AriaApiError
+
+    client = _conn(monkeypatch)
+    calls: list = []
+
+    def fake_request(self, method, url, **k):
+        calls.append(url)
+        return httpx.Response(503, request=httpx.Request(method, url))
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+    monkeypatch.setattr("vmware_aria.connection._RETRY_DELAY_SEC", 0)
+
+    with pytest.raises(AriaApiError) as exc_info:
+        client.get("/resources")
+
+    assert exc_info.value.status_code == 503
+    assert len(calls) == 2, "a transient 503 is retried exactly once (2 attempts total)"
+
+
+def test_client_error_404_not_retried(monkeypatch) -> None:
+    import httpx
+    import pytest
+
+    from vmware_aria.connection import AriaApiError
+
+    client = _conn(monkeypatch)
+    calls: list = []
+
+    def fake_request(self, method, url, **k):
+        calls.append(url)
+        return httpx.Response(404, request=httpx.Request(method, url))
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+
+    with pytest.raises(AriaApiError):
+        client.get("/resources/x")
+
+    assert len(calls) == 1, "client errors (4xx) must not be retried"
+
+
+def test_is_alive_true_when_node_returns_503(monkeypatch) -> None:
+    # A booting node (503) is reachable with a valid token — is_alive must not
+    # report it dead, or connect() would needlessly re-authenticate every call.
+    import httpx
+
+    client = _conn(monkeypatch)
+    monkeypatch.setattr(
+        "httpx.Client.request",
+        lambda self, method, url, **k: httpx.Response(503, request=httpx.Request(method, url)),
+    )
+    assert client.is_alive() is True
+
+
+def test_is_alive_false_when_auth_fails(monkeypatch) -> None:
+    import httpx
+
+    client = _conn(monkeypatch)
+    # Persistent 401 even after re-auth → cached client is stale.
+    monkeypatch.setattr(
+        "httpx.Client.request",
+        lambda self, method, url, **k: httpx.Response(401, request=httpx.Request(method, url)),
+    )
+    assert client.is_alive() is False
+
+
+def test_transport_error_after_reauth_is_wrapped(monkeypatch) -> None:
+    # Regression for the post-reauth leak: a 401 forces a token re-acquire,
+    # then the re-issued request hits a dropped connection. That transport
+    # error must be wrapped as AriaApiError (status_code None), never leak raw.
+    import httpx
+    import pytest
+
+    from vmware_aria.connection import AriaApiError
+
+    client = _conn(monkeypatch)
+    state = {"n": 0}
+
+    def fake_request(self, method, url, **k):
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(401, request=httpx.Request(method, url))
+        raise httpx.ConnectError("connection dropped")
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+    monkeypatch.setattr("vmware_aria.connection._RETRY_DELAY_SEC", 0)
+
+    with pytest.raises(AriaApiError) as exc_info:
+        client.get("/resources")
+
+    assert exc_info.value.status_code is None, "transport failure has no HTTP status"
+    assert "could not connect" in str(exc_info.value).lower()
