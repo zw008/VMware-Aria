@@ -1,3 +1,12 @@
+## v1.5.35 (2026-06-10) — security hardening: safe errors, tighter audit-file perms
+
+### Fixed
+- **MCP tools route errors through `_safe_error()`** — full detail to the server log,
+  a sanitized message to the agent (no raw response bodies / host:port leakage).
+- **Audit** directory created 0700 and `audit.log` 0600 on creation.
+
+This release aligns the whole family back to a single version (1.5.35); vmware-policy and vmware-pilot return to the shared number after sitting at 1.5.22.
+
 ## v1.5.34 (2026-06-09) — teaching errors instead of tracebacks for every API call
 
 Generalizes the v1.5.33 health fix: the 503 crash was one instance of a

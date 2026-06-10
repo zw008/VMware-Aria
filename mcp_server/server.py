@@ -49,13 +49,27 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
-from vmware_policy import vmware_tool
+from vmware_policy import sanitize, vmware_tool
 
 from vmware_aria.config import load_config
 from vmware_aria.connection import ConnectionManager
 from vmware_aria.notify.audit import AuditLogger
 
 logger = logging.getLogger(__name__)
+
+def _safe_error(exc: Exception, tool: str) -> str:
+    """Return an agent-safe error string; log full detail server-side only.
+
+    Raw exception text can carry API response bodies, internal paths, or
+    host:port pairs. Full traceback goes to the server log; the agent sees only
+    a control-char-stripped, length-capped message. Intentional validation
+    errors (ValueError/FileNotFoundError/KeyError/PermissionError) pass through.
+    """
+    logger.error("Tool %s failed", tool, exc_info=True)
+    if isinstance(exc, (ValueError, FileNotFoundError, KeyError, PermissionError)):
+        return sanitize(str(exc), 300)
+    return f"{type(exc).__name__}: operation failed."
+
 _audit = AuditLogger()
 
 mcp = FastMCP(
@@ -119,7 +133,7 @@ def list_resources(
 
         return _list(_get_connection(target), resource_kind=resource_kind, limit=limit, name_filter=name_filter)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -136,7 +150,7 @@ def get_resource(resource_id: str, target: Optional[str] = None) -> dict:
 
         return _get(_get_connection(target), resource_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -169,7 +183,7 @@ def get_resource_metrics(
         begin_ms = end_ms - (hours * 3_600_000)
         return _get_metrics(client, resource_id, metric_keys, begin_time_ms=begin_ms, end_time_ms=end_ms, rollup_type=rollup_type)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -189,7 +203,7 @@ def get_resource_health(resource_id: str, target: Optional[str] = None) -> dict:
 
         return _get_health(_get_connection(target), resource_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -214,7 +228,7 @@ def get_top_consumers(
 
         return _get_top(_get_connection(target), metric_key=metric_key, resource_kind=resource_kind, top_n=top_n)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,7 +264,7 @@ def list_alerts(
 
         return _list(_get_connection(target), active_only=active_only, criticality=criticality, resource_id=resource_id, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -267,7 +281,7 @@ def get_alert(alert_id: str, target: Optional[str] = None) -> dict:
 
         return _get(_get_connection(target), alert_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -300,7 +314,7 @@ def acknowledge_alert(alert_id: str, confirmed: bool = False, target: Optional[s
 
         return _ack(_get_connection(target), alert_id, audit_logger=_audit, target_name=_target_name(target))
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
@@ -332,7 +346,7 @@ def cancel_alert(alert_id: str, confirmed: bool = False, target: Optional[str] =
 
         return _cancel(_get_connection(target), alert_id, audit_logger=_audit, target_name=_target_name(target))
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -357,7 +371,7 @@ def list_alert_definitions(
 
         return _list(_get_connection(target), name_filter=name_filter, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -379,7 +393,7 @@ def get_capacity_overview(cluster_id: str, target: Optional[str] = None) -> dict
 
         return _get(_get_connection(target), cluster_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -396,7 +410,7 @@ def get_remaining_capacity(resource_id: str, target: Optional[str] = None) -> di
 
         return _get(_get_connection(target), resource_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -415,7 +429,7 @@ def get_time_remaining(resource_id: str, target: Optional[str] = None) -> dict:
 
         return _get(_get_connection(target), resource_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -443,7 +457,7 @@ def list_rightsizing_recommendations(
 
         return _list(_get_connection(target), resource_id=resource_id, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -478,7 +492,7 @@ def list_anomalies(
 
         return _list(_get_connection(target), resource_id=resource_id, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -498,7 +512,7 @@ def get_resource_riskbadge(resource_id: str, target: Optional[str] = None) -> di
 
         return _get(_get_connection(target), resource_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -525,7 +539,7 @@ def get_aria_health(target: Optional[str] = None) -> dict:
 
         return _get(_get_connection(target))
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -546,7 +560,7 @@ def list_collector_groups(target: Optional[str] = None) -> list[dict]:
 
         return _list(_get_connection(target))
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -575,7 +589,7 @@ def list_symptom_definitions(
 
         return _list(_get_connection(target), name_filter=name_filter, resource_kind=resource_kind, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
@@ -619,7 +633,7 @@ def create_alert_definition(
             target_name=_target_name(target),
         )
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
@@ -647,7 +661,7 @@ def set_alert_definition_state(
             target_name=_target_name(target),
         )
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
@@ -688,7 +702,7 @@ def delete_alert_definition(
             target_name=_target_name(target),
         )
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -715,7 +729,7 @@ def list_report_definitions(
 
         return _list(_get_connection(target), name_filter=name_filter, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
@@ -749,7 +763,7 @@ def generate_report(
             target_name=_target_name(target),
         )
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -771,7 +785,7 @@ def list_reports(
 
         return _list(_get_connection(target), definition_id=definition_id, limit=limit)
     except Exception as e:
-        return [{"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
+        return [{"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
@@ -791,7 +805,7 @@ def get_report(
 
         return _get(_get_connection(target), report_id)
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
@@ -828,7 +842,7 @@ def delete_report(
             target_name=_target_name(target),
         )
     except Exception as e:
-        return {"error": str(e), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
+        return {"error": _safe_error(e, "aria"), "hint": "Run 'vmware-aria doctor' to verify connectivity."}
 
 
 # ---------------------------------------------------------------------------
