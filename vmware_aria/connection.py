@@ -109,15 +109,47 @@ class AriaClient:
     # ------------------------------------------------------------------
 
     def _acquire_token(self) -> None:
-        """Acquire a new OpsToken from Aria Operations."""
+        """Acquire a new OpsToken from Aria Operations.
+
+        Token acquisition errors are translated into ``AriaApiError`` here —
+        this runs both at connect time and mid-request (refresh inside
+        ``_request()``), and a bare ``raise_for_status()`` would leak a raw
+        httpx traceback on a wrong password (401), bad authSource (400), or a
+        node that is still booting (503).
+        """
         url = f"{self._base_url}/auth/token/acquire"
         payload = {
             "username": self._target.username,
             "password": self._password,
             "authSource": self._target.auth_source,
         }
-        resp = self._client.post(url, json=payload, headers={"Accept": "application/json"})
-        resp.raise_for_status()
+        try:
+            resp = self._client.post(url, json=payload, headers={"Accept": "application/json"})
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in (400, 401, 403):
+                hint = (
+                    "Check username/password/authSource in "
+                    "~/.vmware-aria/config.yaml and the password env var in "
+                    "~/.vmware-aria/.env."
+                )
+            else:
+                hint = _hint_for_status(status, "/auth/token/acquire")
+            raise AriaApiError(
+                f"Aria Operations authentication to {self._target.host} failed: "
+                f"POST /auth/token/acquire returned HTTP {status}. {hint}",
+                status_code=status,
+                method="POST",
+                path="/auth/token/acquire",
+            ) from exc
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise AriaApiError(
+                f"Aria Operations authentication to {self._target.host} could not "
+                f"connect: {exc}. Check the host/port and network, then retry.",
+                method="POST",
+                path="/auth/token/acquire",
+            ) from exc
         data = resp.json()
 
         token = data.get("token")
@@ -239,9 +271,18 @@ class AriaClient:
         path: str,
         json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
+        *,
+        retries: int = 0,
     ) -> dict:
-        """POST request. Returns parsed JSON response."""
-        resp = self._request("POST", path, params=params, json_data=json_data)
+        """POST request. Returns parsed JSON response.
+
+        Defaults to retries=0: POST is not idempotent in general (e.g.
+        creating an alert definition or queueing a report), so a transient
+        502/504 after the server already accepted the request must not be
+        replayed — that would duplicate the side effect. Idempotent callers
+        (pure query endpoints like /alerts/query) opt in with retries=1.
+        """
+        resp = self._request("POST", path, params=params, json_data=json_data, retries=retries)
         return resp.json() if resp.content else {}
 
     def put(self, path: str, json_data: dict[str, Any] | None = None) -> dict:
@@ -308,8 +349,13 @@ class ConnectionManager:
         if not name:
             raise ValueError("No target specified and no default target configured")
 
-        if name in self._clients and self._clients[name].is_alive():
-            return self._clients[name]
+        if name in self._clients:
+            if self._clients[name].is_alive():
+                return self._clients[name]
+            # Stale client: release its token and close the HTTP connection
+            # pool before replacing it, so sockets don't leak across reconnects.
+            self._clients[name].close()
+            del self._clients[name]
 
         target_cfg = self._config.get_target(name)
         if target_cfg is None:

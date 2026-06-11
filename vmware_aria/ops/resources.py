@@ -206,7 +206,8 @@ def get_resource_metrics(
         "intervalQuantifier": interval_quantity,
     }
 
-    data = client.post(f"/resources/{resource_id}/stats/query", json_data=payload)
+    # Pure query endpoint — idempotent, safe to retry transient gateway errors.
+    data = client.post(f"/resources/{resource_id}/stats/query", json_data=payload, retries=1)
 
     # Response nests stats under values[].stat-list.stat[] (hyphenated wire
     # key; some renderings show statList — parse both defensively).

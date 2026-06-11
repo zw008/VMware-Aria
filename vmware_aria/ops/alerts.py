@@ -85,7 +85,8 @@ def list_alerts(
     if resource_id:
         query["resource-query"] = {"resourceId": [resource_id]}
 
-    data = client.post("/alerts/query", json_data=query, params={"pageSize": limit})
+    # Pure query endpoint — idempotent, safe to retry transient gateway errors.
+    data = client.post("/alerts/query", json_data=query, params={"pageSize": limit}, retries=1)
     items = data.get("alerts", [])
 
     # Alert model fields (2026-06-08 spec audit): criticality is `alertLevel`,

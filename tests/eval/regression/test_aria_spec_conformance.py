@@ -63,16 +63,34 @@ def _collect_api_calls() -> list[tuple[str, str, str]]:
     for scan_dir in SCAN_DIRS:
         for py in sorted(scan_dir.rglob("*.py")):
             tree = ast.parse(py.read_text())
+            # simple `url = "<literal-or-fstring>"` assignments, so calls like
+            # `self._client.post(url, ...)` (token acquire) resolve too
+            assigned: dict[str, str] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                    tgt = node.targets[0]
+                    val = _literal_path(node.value)
+                    if isinstance(tgt, ast.Name) and val is not None:
+                        assigned[tgt.id] = val
             for node in ast.walk(tree):
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                     continue
                 method = _HTTP_METHODS.get(node.func.attr)
                 if method is None or not node.args:
                     continue
-                path = _literal_path(node.args[0])
-                if path is None or not path.startswith("/"):
+                arg = node.args[0]
+                path = _literal_path(arg)
+                if path is None and isinstance(arg, ast.Name):
+                    path = assigned.get(arg.id)
+                if path is None:
                     continue
-                # full URLs (token acquire uses base_url f-string) — keep tail
+                # full URLs (token acquire uses an f-string with base_url) —
+                # strip the leading interpolated host segment and keep the
+                # path tail so auth endpoints are validated, not skipped.
+                if path.startswith("{param}/"):
+                    path = path[len("{param}"):]
+                if not path.startswith("/"):
+                    continue
                 calls.append((f"{py.relative_to(REPO_ROOT)}:{node.lineno}", method, path))
     return calls
 
@@ -80,6 +98,18 @@ def _collect_api_calls() -> list[tuple[str, str, str]]:
 def test_spec_index_is_loaded() -> None:
     spec = json.loads(SPEC_PATH.read_text())
     assert spec["operation_count"] >= 300, "spec index missing or truncated"
+
+
+def test_auth_endpoints_are_scanned_not_skipped() -> None:
+    """Regression: f-string URLs like f"{self._base_url}/auth/token/acquire"
+    rendered as "{param}/..." and were silently dropped by the AST scan, so
+    the auth endpoints were never validated against the spec."""
+    calls = _collect_api_calls()
+    paths = {(method, path) for _, method, path in calls}
+    assert ("POST", "/auth/token/acquire") in paths, (
+        "auth token acquire call must be collected by the AST scan "
+        f"(got {sorted(p for m, p in paths if 'auth' in p)})"
+    )
 
 
 def test_every_api_call_exists_in_suite_api_spec() -> None:

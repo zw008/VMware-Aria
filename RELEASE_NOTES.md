@@ -1,3 +1,18 @@
+## v1.5.36 (2026-06-12) — error-translation completeness + parity tests
+
+### Fixed
+- **`AriaApiError` now passes through MCP `_safe_error`** — the v1.5.34 teaching hints
+  (404 "list the parent collection first", 503 "platform booting") reach agents again.
+- **Token acquisition errors are translated** — a wrong password / booting node at connect or
+  mid-session refresh now yields a teaching AriaApiError instead of a raw httpx traceback.
+- **Non-idempotent POSTs no longer auto-retry on 502/504** (`post()` defaults to `retries=0`);
+  only idempotent `/query` reads opt into one retry — prevents duplicate report/alert-def creation.
+- CLI catches AriaApiError → one teaching line + exit 1 (no rich traceback).
+
+### Added
+- MCP parity regression test (27 tools, 20 read / 7 write) and a spec-conformance AST fix that
+  no longer skips the f-string auth endpoints.
+
 ## v1.5.35 (2026-06-10) — security hardening: safe errors, tighter audit-file perms
 
 ### Fixed

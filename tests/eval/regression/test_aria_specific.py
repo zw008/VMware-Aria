@@ -449,3 +449,201 @@ def test_transport_error_after_reauth_is_wrapped(monkeypatch) -> None:
 
     assert exc_info.value.status_code is None, "transport failure has no HTTP status"
     assert "could not connect" in str(exc_info.value).lower()
+
+
+# ── auth errors translated at the source (connect + mid-request refresh) ─
+#
+# _acquire_token() used a bare raise_for_status(): a wrong password (401),
+# bad authSource (400), or booting node (503) at connect time leaked a raw
+# httpx traceback, and a refresh inside _request()'s loop escaped the
+# translation layer entirely.
+
+
+def test_auth_failure_at_connect_becomes_teaching_error(monkeypatch) -> None:
+    import httpx
+    import pytest
+
+    from vmware_aria.config import TargetConfig
+    from vmware_aria.connection import AriaApiError, AriaClient
+
+    monkeypatch.setattr(
+        "httpx.Client.post",
+        lambda self, url, **k: httpx.Response(401, request=httpx.Request("POST", url)),
+    )
+
+    with pytest.raises(AriaApiError) as exc_info:
+        AriaClient(TargetConfig(host="h", username="u"), "wrong-pw")
+
+    err = exc_info.value
+    assert err.status_code == 401
+    assert err.path == "/auth/token/acquire"
+    # the message must point at the credentials, not just report 401
+    assert "username/password/authSource" in str(err)
+    assert ".env" in str(err)
+
+
+def test_auth_transport_error_becomes_aria_api_error(monkeypatch) -> None:
+    import httpx
+    import pytest
+
+    from vmware_aria.config import TargetConfig
+    from vmware_aria.connection import AriaApiError, AriaClient
+
+    def fake_post(self, url, **k):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("httpx.Client.post", fake_post)
+
+    with pytest.raises(AriaApiError) as exc_info:
+        AriaClient(TargetConfig(host="h", username="u"), "pw")
+
+    assert exc_info.value.status_code is None
+    assert "could not connect" in str(exc_info.value).lower()
+
+
+def test_token_refresh_failure_mid_request_is_translated(monkeypatch) -> None:
+    import httpx
+    import pytest
+
+    from vmware_aria.connection import AriaApiError
+
+    client = _conn(monkeypatch)
+    client._token_expires_at = 0  # force a refresh on the next call
+
+    monkeypatch.setattr(
+        "httpx.Client.post",
+        lambda self, url, **k: httpx.Response(503, request=httpx.Request("POST", url)),
+    )
+
+    with pytest.raises(AriaApiError) as exc_info:
+        client.get("/resources")
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.path == "/auth/token/acquire"
+
+
+# ── POST is not retried by default (non-idempotent creates) ────────────
+
+
+def test_post_not_retried_on_transient_504_by_default(monkeypatch) -> None:
+    # A 504 after the server already accepted a POST (create report, create
+    # alert definition) must not be replayed — that duplicates the side
+    # effect. Only idempotent query callers opt in with retries=1.
+    import httpx
+    import pytest
+
+    from vmware_aria.connection import AriaApiError
+
+    client = _conn(monkeypatch)
+    calls: list = []
+
+    def fake_request(self, method, url, **k):
+        calls.append((method, url))
+        return httpx.Response(504, request=httpx.Request(method, url))
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+    monkeypatch.setattr("vmware_aria.connection._RETRY_DELAY_SEC", 0)
+
+    with pytest.raises(AriaApiError) as exc_info:
+        client.post("/reports", json_data={"reportDefinitionId": "d-1"})
+
+    assert exc_info.value.status_code == 504
+    assert len(calls) == 1, "non-idempotent POST must not be retried by default"
+
+
+def test_idempotent_query_posts_opt_into_retry() -> None:
+    from vmware_aria.ops.alerts import list_alerts
+    from vmware_aria.ops.resources import get_resource_metrics
+
+    client = _client()
+    client.post.return_value = {"alerts": []}
+    list_alerts(client)
+    assert client.post.call_args.kwargs.get("retries") == 1
+
+    client.post.reset_mock()
+    client.post.return_value = {"values": []}
+    get_resource_metrics(client, "res-1", ["cpu|usage_average"])
+    assert client.post.call_args.kwargs.get("retries") == 1
+
+
+def test_create_posts_do_not_pass_retries() -> None:
+    from vmware_aria.ops.reports import generate_report
+
+    client = _client()
+    client.post.return_value = {"id": "r-1", "status": "QUEUED"}
+    generate_report(client, definition_id="d-1", resource_ids=["res-1"])
+    assert "retries" not in client.post.call_args.kwargs, (
+        "report creation is not idempotent — it must use the no-retry default"
+    )
+
+
+# ── stale clients are closed before replacement ────────────────────────
+
+
+def test_stale_client_closed_before_replacement(monkeypatch) -> None:
+    # ConnectionManager.connect() used to drop a dead client on the floor and
+    # build a new one, leaking the old HTTP connection pool and auth token.
+    from vmware_aria.config import AppConfig, TargetConfig
+    from vmware_aria.connection import ConnectionManager
+
+    cfg = AppConfig(
+        targets={"t1": TargetConfig(host="h", username="u")},
+        default_target="t1",
+    )
+    mgr = ConnectionManager(cfg)
+
+    stale = MagicMock(name="stale-client")
+    stale.is_alive.return_value = False
+    mgr._clients["t1"] = stale
+
+    fresh = MagicMock(name="fresh-client")
+    monkeypatch.setenv("VMWARE_ARIA_T1_PASSWORD", "pw")
+    monkeypatch.setattr("vmware_aria.connection.AriaClient", lambda t, p: fresh)
+
+    result = mgr.connect("t1")
+
+    stale.close.assert_called_once()
+    assert result is fresh
+
+
+# ── CLI surfaces operational errors as one line, not a traceback ────────
+
+
+def test_cli_aria_api_error_is_one_red_line_not_traceback(monkeypatch) -> None:
+    # A bad UUID (404) at the CLI used to dump a full traceback; the
+    # _friendly_errors wrapper must print the teaching message and exit 1.
+    from typer.testing import CliRunner
+
+    from vmware_aria.cli import app
+    from vmware_aria.connection import AriaApiError, _hint_for_status
+
+    def boom(target, config_path=None):
+        raise AriaApiError(
+            "Aria Operations GET /resources/bad-uuid returned HTTP 404. "
+            + _hint_for_status(404, "/resources/bad-uuid"),
+            status_code=404,
+            method="GET",
+            path="/resources/bad-uuid",
+        )
+
+    monkeypatch.setattr("vmware_aria.cli._get_connection", boom)
+    result = CliRunner().invoke(app, ["resource", "get", "bad-uuid"])
+
+    assert result.exit_code == 1
+    assert "404" in result.output
+    assert "list the parent" in result.output, "teaching hint must reach the user"
+    assert "Traceback" not in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_cli_missing_config_is_one_line_not_traceback(monkeypatch, tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    from vmware_aria.cli import app
+
+    missing = tmp_path / "nope" / "config.yaml"
+    result = CliRunner().invoke(app, ["alert", "list", "--config", str(missing)])
+
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "Error" in result.output

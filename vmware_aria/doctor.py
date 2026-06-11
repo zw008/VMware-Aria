@@ -105,7 +105,9 @@ def run_doctor(
 
                 # Get Aria version
                 try:
-                    version_info = client.get("/deployment/node/status")
+                    # Health probe: an error status is itself the answer —
+                    # skip the transient back-off so doctor stays snappy.
+                    version_info = client.get("/deployment/node/status", retries=0)
                     node_type = version_info.get("nodeType", "unknown")
                     checks.append((f"Aria node type ({name})", True, node_type))
                 except Exception as e:

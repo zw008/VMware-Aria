@@ -6,6 +6,7 @@ anomaly detection, and platform health checks.
 
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 from typing import Annotated
@@ -82,6 +83,27 @@ ConfigOption = Annotated[
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
+def _friendly_errors(fn):
+    """Print expected operational errors as one red line instead of a traceback.
+
+    AriaApiError already carries a teaching message (status + path + fix);
+    config problems surface as FileNotFoundError/KeyError/OSError. Anything
+    else is a real bug and keeps its traceback for debugging.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        from vmware_aria.connection import AriaApiError
+
+        try:
+            return fn(*args, **kwargs)
+        except (AriaApiError, FileNotFoundError, KeyError, OSError) as exc:
+            console.print(f"[red]Error: {exc}[/red]")
+            raise typer.Exit(1) from exc
+
+    return wrapper
+
+
 def _get_connection(target: str | None, config_path: Path | None = None):
     """Return (AriaClient, AppConfig)."""
     from vmware_aria.config import load_config
@@ -102,6 +124,7 @@ def _json_output(data: object) -> None:
 
 
 @app.command()
+@_friendly_errors
 def doctor(
     skip_auth: Annotated[bool, typer.Option("--skip-auth", help="Skip authentication check")] = False,
     config: ConfigOption = None,
@@ -119,6 +142,7 @@ def doctor(
 
 
 @resource_app.command("list")
+@_friendly_errors
 def resource_list(
     kind: Annotated[str, typer.Option("--kind", "-k", help="Resource kind")] = "VirtualMachine",
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max results")] = 50,
@@ -146,6 +170,7 @@ def resource_list(
 
 
 @resource_app.command("get")
+@_friendly_errors
 def resource_get(
     resource_id: str,
     target: TargetOption = None,
@@ -159,6 +184,7 @@ def resource_get(
 
 
 @resource_app.command("metrics")
+@_friendly_errors
 def resource_metrics(
     resource_id: str,
     metrics: Annotated[str, typer.Option("--metrics", "-m", help="Comma-separated metric keys")] = "cpu|usage_average,mem|usage_average",
@@ -180,6 +206,7 @@ def resource_metrics(
 
 
 @resource_app.command("health")
+@_friendly_errors
 def resource_health(
     resource_id: str,
     target: TargetOption = None,
@@ -193,6 +220,7 @@ def resource_health(
 
 
 @resource_app.command("top")
+@_friendly_errors
 def resource_top(
     metric: Annotated[str, typer.Option("--metric", help="Metric key to rank by")] = "cpu|usage_average",
     kind: Annotated[str, typer.Option("--kind", "-k", help="Resource kind")] = "VirtualMachine",
@@ -224,6 +252,7 @@ def resource_top(
 
 
 @alert_app.command("list")
+@_friendly_errors
 def alert_list(
     active_only: Annotated[bool, typer.Option("--active/--all", help="Active alerts only")] = True,
     criticality: Annotated[str | None, typer.Option("--criticality", help="Filter by criticality")] = None,
@@ -253,6 +282,7 @@ def alert_list(
 
 
 @alert_app.command("get")
+@_friendly_errors
 def alert_get(
     alert_id: str,
     target: TargetOption = None,
@@ -266,6 +296,7 @@ def alert_get(
 
 
 @alert_app.command("acknowledge")
+@_friendly_errors
 def alert_acknowledge(
     alert_id: str,
     target: TargetOption = None,
@@ -285,6 +316,7 @@ def alert_acknowledge(
 
 
 @alert_app.command("cancel")
+@_friendly_errors
 def alert_cancel(
     alert_id: str,
     target: TargetOption = None,
@@ -304,6 +336,7 @@ def alert_cancel(
 
 
 @alert_app.command("definitions")
+@_friendly_errors
 def alert_definitions(
     name_filter: Annotated[str | None, typer.Option("--name", help="Filter by name substring")] = None,
     limit: Annotated[int, typer.Option("--limit", "-n")] = 50,
@@ -336,6 +369,7 @@ def alert_definitions(
 
 
 @capacity_app.command("overview")
+@_friendly_errors
 def capacity_overview(
     cluster_id: str,
     target: TargetOption = None,
@@ -349,6 +383,7 @@ def capacity_overview(
 
 
 @capacity_app.command("remaining")
+@_friendly_errors
 def capacity_remaining(
     resource_id: str,
     target: TargetOption = None,
@@ -362,6 +397,7 @@ def capacity_remaining(
 
 
 @capacity_app.command("time-remaining")
+@_friendly_errors
 def capacity_time_remaining(
     resource_id: str,
     target: TargetOption = None,
@@ -375,6 +411,7 @@ def capacity_time_remaining(
 
 
 @capacity_app.command("rightsizing")
+@_friendly_errors
 def capacity_rightsizing(
     resource_id: Annotated[str | None, typer.Option("--resource-id", help="Scope to a specific VM")] = None,
     limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
@@ -408,6 +445,7 @@ def capacity_rightsizing(
 
 
 @anomaly_app.command("list")
+@_friendly_errors
 def anomaly_list(
     resource_id: Annotated[str | None, typer.Option("--resource-id", help="Scope to a resource")] = None,
     limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
@@ -434,6 +472,7 @@ def anomaly_list(
 
 
 @anomaly_app.command("risk")
+@_friendly_errors
 def anomaly_risk(
     resource_id: str,
     target: TargetOption = None,
@@ -452,6 +491,7 @@ def anomaly_risk(
 
 
 @health_app.command("status")
+@_friendly_errors
 def health_status(
     target: TargetOption = None,
     config: ConfigOption = None,
@@ -469,6 +509,7 @@ def health_status(
 
 
 @health_app.command("collectors")
+@_friendly_errors
 def health_collectors(
     target: TargetOption = None,
     config: ConfigOption = None,
@@ -500,6 +541,7 @@ def health_collectors(
 
 
 @report_app.command("definitions")
+@_friendly_errors
 def report_definitions(
     name_filter: Annotated[str | None, typer.Option("--name", help="Filter by name substring")] = None,
     limit: Annotated[int, typer.Option("--limit", "-n")] = 50,
@@ -525,6 +567,7 @@ def report_definitions(
 
 
 @report_app.command("generate")
+@_friendly_errors
 def report_generate(
     definition_id: str,
     resource_ids: Annotated[str | None, typer.Option("--resources", help="Comma-separated resource UUIDs")] = None,
@@ -543,6 +586,7 @@ def report_generate(
 
 
 @report_app.command("list")
+@_friendly_errors
 def report_list(
     definition_id: Annotated[str | None, typer.Option("--definition-id", help="Filter by definition UUID")] = None,
     limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
@@ -569,6 +613,7 @@ def report_list(
 
 
 @report_app.command("get")
+@_friendly_errors
 def report_get(
     report_id: str,
     target: TargetOption = None,
@@ -587,6 +632,7 @@ def report_get(
 
 
 @report_app.command("delete")
+@_friendly_errors
 def report_delete(
     report_id: str,
     target: TargetOption = None,
