@@ -171,7 +171,7 @@ def doctor(
 @_friendly_errors
 def resource_list(
     kind: Annotated[str, typer.Option("--kind", "-k", help="Resource kind")] = "VirtualMachine",
-    limit: Annotated[int, typer.Option("--limit", "-n", help="Max results")] = 50,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Max results (paginated)")] = 50,
     name_filter: Annotated[str | None, typer.Option("--name", help="Filter by name substring")] = None,
     target: TargetOption = None,
     config: ConfigOption = None,

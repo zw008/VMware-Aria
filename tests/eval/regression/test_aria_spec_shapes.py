@@ -591,3 +591,76 @@ def test_get_aria_health_reraises_non_503_errors() -> None:
 
     with pytest.raises(AriaApiError):
         get_aria_health(client)
+
+
+# ── #7: list_resources must follow pagination, not stop at one 500-row page ──
+
+
+def _resource_rows(prefix: str, n: int) -> list[dict]:
+    """n minimal ResourceDto rows with unique identifiers/names."""
+    return [
+        {
+            "identifier": f"{prefix}-{i}",
+            "resourceKey": {"name": f"{prefix}-{i}", "resourceKindKey": "VirtualMachine"},
+        }
+        for i in range(n)
+    ]
+
+
+def test_list_resources_follows_pagination_across_pages() -> None:
+    """A 2-page response (500 + 300) must return all 800, not just 500.
+
+    Root cause of the 2026-06-09 "maximum of 500 resources returned" report:
+    the old code fetched a single page (pageSize=limit) and ignored pageInfo,
+    so large environments were silently truncated.
+    """
+    from vmware_aria.ops.resources import list_resources
+
+    client = _client()
+    page0 = _resource_rows("vm", 1000)  # full page → there is a next page
+    page1 = _resource_rows("vmx", 300)  # short page → last page
+    client.get.side_effect = [
+        {"resourceList": page0, "pageInfo": {"totalCount": 1300, "page": 0, "pageSize": 1000}},
+        {"resourceList": page1, "pageInfo": {"totalCount": 1300, "page": 1, "pageSize": 1000}},
+    ]
+
+    results = list_resources(client)
+
+    assert len(results) == 1300, "all pages must be accumulated, not just the first"
+    # Successive pages requested with an incrementing 0-based `page` param.
+    assert client.get.call_args_list[0].kwargs["params"]["page"] == 0
+    assert client.get.call_args_list[1].kwargs["params"]["page"] == 1
+
+
+def test_list_resources_terminates_on_totalcount_even_with_full_last_page() -> None:
+    """If the last page is exactly pageSize but totalCount is reached, stop."""
+    from vmware_aria.ops.resources import list_resources
+
+    client = _client()
+    page0 = _resource_rows("vm", 1000)
+    page1 = _resource_rows("vmx", 1000)
+    client.get.side_effect = [
+        {"resourceList": page0, "pageInfo": {"totalCount": 2000, "page": 0, "pageSize": 1000}},
+        {"resourceList": page1, "pageInfo": {"totalCount": 2000, "page": 1, "pageSize": 1000}},
+    ]
+
+    results = list_resources(client)
+
+    assert len(results) == 2000
+    assert client.get.call_count == 2, "must not request a 3rd page past totalCount"
+
+
+def test_list_resources_explicit_limit_stops_early() -> None:
+    """An explicit limit caps results and avoids extra page fetches."""
+    from vmware_aria.ops.resources import list_resources
+
+    client = _client()
+    client.get.return_value = {
+        "resourceList": _resource_rows("vm", 1000),
+        "pageInfo": {"totalCount": 5000, "page": 0, "pageSize": 1000},
+    }
+
+    results = list_resources(client, limit=50)
+
+    assert len(results) == 50
+    assert client.get.call_count == 1, "limit satisfied on page 0 — no second fetch"

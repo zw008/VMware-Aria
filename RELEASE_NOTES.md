@@ -1,3 +1,14 @@
+## v1.5.38 (2026-06-12) — backlog finish: pagination bug fix, server split
+
+### Fixed
+- **Resource listing was capped at ~500 results.** `list_resources` now follows suite-api pagination
+  (page/pageSize loop with totalCount termination), so large environments return all resources, not a
+  truncated page. (#7)
+
+### Changed
+- Split the oversized MCP server into `mcp_server/tools/*` modules under the 800-line cap
+  (behavior-preserving; 27 tools unchanged). (#9)
+
 ## v1.5.37 (2026-06-12) — backlog: liveness caching, error-hint completeness
 
 ### Fixed

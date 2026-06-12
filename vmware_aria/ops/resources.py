@@ -39,6 +39,18 @@ _VALID_SORT_METRICS = {
 # ~40 chars to the query string; >100 IDs risks HTTP 414 (URI Too Long).
 _TOPN_MAX_RESOURCE_IDS = 100
 
+# Server-side page size for GET /resources pagination. The suite-api caps a
+# single response at ~1000 resources regardless of a larger pageSize, so a
+# large environment must be walked page by page (page index is 0-based). 1000
+# is the documented max page size — fewer round trips than a smaller value.
+_RESOURCES_PAGE_SIZE = 1000
+
+# Safety cap on total resources fetched across all pages. A vCenter with tens
+# of thousands of VMs could otherwise pull unbounded data into context; when
+# the cap is hit before totalCount, we stop and log a warning (consistent with
+# the family "search over list" rule — narrow with name_filter / resource_kind).
+_RESOURCES_MAX_TOTAL = 50000
+
 
 def _badges_by_type(dto: dict) -> dict[str, dict]:
     """Index the ResourceDto badges[] array ({type, color, score}) by type.
@@ -55,18 +67,44 @@ def _badges_by_type(dto: dict) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
+def _summarize_resource(r: dict) -> dict:
+    """Project one ResourceDto onto the high-signal summary fields we return."""
+    health = _badges_by_type(r).get("HEALTH", {})
+    return {
+        "id": sanitize(r.get("identifier", "")),
+        "name": sanitize(r.get("resourceKey", {}).get("name", "")),
+        "kind": sanitize(r.get("resourceKey", {}).get("resourceKindKey", "")),
+        "adapter_kind": sanitize(r.get("resourceKey", {}).get("adapterKindKey", "")),
+        "health_color": sanitize(health.get("color", "")),
+        "health_score": health.get("score", None),
+        # guard: API may return "resourceStatusStates": [] (key present, empty)
+        "status": sanitize((r.get("resourceStatusStates") or [{}])[0].get("resourceState", "")),
+    }
+
+
 def list_resources(
     client: AriaClient,
     resource_kind: str = "VirtualMachine",
-    limit: int = 100,
+    limit: int | None = None,
     name_filter: str | None = None,
 ) -> list[dict]:
-    """List resources of a given kind from Aria Operations.
+    """List resources of a given kind from Aria Operations, following pagination.
+
+    GET /resources caps a single response at ~1000 resources (the suite-api
+    server-side page limit) and returns the rest across successive 0-based
+    pages with a ``pageInfo`` block carrying ``totalCount``. The previous
+    implementation requested one page with ``pageSize=limit`` and never read
+    ``pageInfo``, so any environment with more than ~500–1000 resources of a
+    kind was silently truncated (2026-06-09 user report: "maximum of 500
+    resources returned"). This walks every page until ``totalCount`` is reached
+    (or ``limit`` is satisfied), so large environments are fully enumerated.
 
     Args:
         client: Authenticated Aria Operations API client.
         resource_kind: Resource kind to list (e.g. VirtualMachine, HostSystem).
-        limit: Maximum number of results to return (1–500).
+        limit: Maximum number of results to return. ``None`` (default) returns
+            all resources of the kind, walking every page up to an internal
+            safety cap. Pass an int to stop early.
         name_filter: Optional substring filter on resource name (case-insensitive).
 
     Returns:
@@ -75,29 +113,57 @@ def list_resources(
     if resource_kind not in _VALID_RESOURCE_KINDS:
         _log.warning("Unknown resource_kind '%s', proceeding anyway", resource_kind)
 
-    limit = max(1, min(limit, 500))
-    params: dict[str, Any] = {"resourceKind": resource_kind, "pageSize": limit}
-    data = client.get("/resources", params=params)
+    # Hard ceiling on rows fetched: the explicit limit if given, otherwise the
+    # safety cap. name_filter is applied client-side, so we keep paging until
+    # the unfiltered totalCount is exhausted rather than stopping at `limit`
+    # filtered matches.
+    fetch_cap = _RESOURCES_MAX_TOTAL if limit is None else min(limit, _RESOURCES_MAX_TOTAL)
+    filter_lc = name_filter.lower() if name_filter else None
 
-    items = data.get("resourceList", [])
-    results = []
-    for r in items:
-        name = sanitize(r.get("resourceKey", {}).get("name", ""))
-        if name_filter and name_filter.lower() not in name.lower():
-            continue
-        health = _badges_by_type(r).get("HEALTH", {})
-        results.append(
-            {
-                "id": sanitize(r.get("identifier", "")),
-                "name": name,
-                "kind": sanitize(r.get("resourceKey", {}).get("resourceKindKey", "")),
-                "adapter_kind": sanitize(r.get("resourceKey", {}).get("adapterKindKey", "")),
-                "health_color": sanitize(health.get("color", "")),
-                "health_score": health.get("score", None),
-                # guard: API may return "resourceStatusStates": [] (key present, empty)
-                "status": sanitize((r.get("resourceStatusStates") or [{}])[0].get("resourceState", "")),
-            }
-        )
+    results: list[dict] = []
+    fetched = 0
+    page = 0
+    while True:
+        params: dict[str, Any] = {
+            "resourceKind": resource_kind,
+            "page": page,
+            "pageSize": _RESOURCES_PAGE_SIZE,
+        }
+        data = client.get("/resources", params=params)
+        items = data.get("resourceList", []) or []
+        if not items:
+            break
+
+        for r in items:
+            fetched += 1
+            summary = _summarize_resource(r)
+            if filter_lc and filter_lc not in summary["name"].lower():
+                continue
+            results.append(summary)
+            if limit is not None and len(results) >= limit:
+                return results
+
+        page_info = data.get("pageInfo") or {}
+        total_count = page_info.get("totalCount")
+        # Termination: a short page (fewer than a full pageSize) means the last
+        # page; an exhausted totalCount means we've seen everything. Either
+        # without the other is enough — guard both for servers that omit pageInfo.
+        if len(items) < _RESOURCES_PAGE_SIZE:
+            break
+        if total_count is not None and fetched >= total_count:
+            break
+        if fetched >= fetch_cap:
+            _log.warning(
+                "list_resources hit the %d-resource safety cap for kind '%s' "
+                "(totalCount=%s); results truncated. Narrow with name_filter or "
+                "a smaller resource_kind.",
+                fetch_cap,
+                resource_kind,
+                total_count,
+            )
+            break
+        page += 1
+
     return results
 
 
