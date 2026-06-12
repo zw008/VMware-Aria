@@ -32,6 +32,13 @@ _EXPIRY_BUFFER_SEC = 60
 _TRANSIENT_STATUS = frozenset({502, 503, 504})
 _RETRY_DELAY_SEC = 2.0
 
+# How long a successful liveness probe is trusted before re-probing. Every MCP
+# tool call goes through connect(); without this, each one fires a full
+# is_alive() HTTP round-trip to /deployment/node/status. A short TTL lets bursts
+# of back-to-back calls reuse the cached client without re-probing, while still
+# catching a dropped session within a few seconds.
+_LIVENESS_TTL_SEC = 30.0
+
 
 class AriaApiError(Exception):
     """An Aria Operations suite-api call returned an error or failed to connect.
@@ -89,6 +96,9 @@ class AriaClient:
         self._token: str | None = None
         # Epoch seconds when the token expires
         self._token_expires_at: float = 0.0
+        # Epoch seconds of the last is_alive() that returned True; gates the
+        # liveness probe so a burst of connect() calls doesn't re-probe each time.
+        self._liveness_checked_at: float = 0.0
 
         # Suppress urllib3's InsecureRequestWarning for self-signed certs.
         # urllib3.disable_warnings is class-targeted and idempotent; it avoids
@@ -306,11 +316,26 @@ class AriaClient:
         """
         try:
             self._request("GET", "/deployment/node/status", retries=0)
+            self._liveness_checked_at = time.time()
             return True
         except AriaApiError as exc:
             return exc.status_code is not None and exc.status_code not in (401, 403)
         except Exception:
             return False
+
+    def is_alive_cached(self, ttl: float = _LIVENESS_TTL_SEC) -> bool:
+        """Liveness check that skips the HTTP probe within ``ttl`` of the last success.
+
+        connect() runs on every MCP tool call, so probing /deployment/node/status
+        each time is wasteful for back-to-back calls. If the last is_alive() probe
+        succeeded within ``ttl`` seconds, trust it and return True without a round
+        trip. On a cache miss (or after the TTL expires) fall through to the real
+        is_alive(), which re-probes and refreshes the timestamp on success. A
+        probe failure does NOT update the timestamp, so the next call re-probes.
+        """
+        if self._liveness_checked_at and (time.time() - self._liveness_checked_at) < ttl:
+            return True
+        return self.is_alive()
 
     def close(self) -> None:
         """Release the auth token and close the HTTP client."""
@@ -350,7 +375,7 @@ class ConnectionManager:
             raise ValueError("No target specified and no default target configured")
 
         if name in self._clients:
-            if self._clients[name].is_alive():
+            if self._clients[name].is_alive_cached():
                 return self._clients[name]
             # Stale client: release its token and close the HTTP connection
             # pool before replacing it, so sockets don't leak across reconnects.

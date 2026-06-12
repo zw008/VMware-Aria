@@ -1,3 +1,10 @@
+## v1.5.37 (2026-06-12) — backlog: liveness caching, error-hint completeness
+
+### Fixed
+- `is_alive()` is now cached with a short TTL instead of a full HTTP round-trip on every MCP tool call. (#8)
+- MCP `_safe_error` passes `ConnectionError` through; the CLI now closes per-command `ConnectionManager`s
+  (no token accumulation). (#10)
+
 ## v1.5.36 (2026-06-12) — error-translation completeness + parity tests
 
 ### Fixed

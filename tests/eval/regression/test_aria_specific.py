@@ -423,6 +423,110 @@ def test_is_alive_false_when_auth_fails(monkeypatch) -> None:
     assert client.is_alive() is False
 
 
+# ── #8: liveness TTL cache — connect() runs on every MCP tool call; without a
+# short TTL it fires a full is_alive() HTTP probe each time. Two back-to-back
+# connect() calls within the TTL must probe only once; after expiry, re-probe.
+
+
+def test_is_alive_cached_skips_probe_within_ttl(monkeypatch) -> None:
+    import httpx
+
+    client = _conn(monkeypatch)
+    calls: list = []
+
+    def fake_request(self, method, url, **k):
+        calls.append(url)
+        return httpx.Response(200, request=httpx.Request(method, url))
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+
+    # First call probes and caches; the second within the TTL reuses the cache.
+    assert client.is_alive_cached(ttl=30.0) is True
+    assert client.is_alive_cached(ttl=30.0) is True
+    assert len(calls) == 1, "a second liveness check within the TTL must not re-probe"
+
+
+def test_is_alive_cached_reprobes_after_ttl(monkeypatch) -> None:
+    import httpx
+
+    client = _conn(monkeypatch)
+    calls: list = []
+
+    def fake_request(self, method, url, **k):
+        calls.append(url)
+        return httpx.Response(200, request=httpx.Request(method, url))
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+
+    # Tiny TTL so the second call lands after expiry without a real sleep.
+    assert client.is_alive_cached(ttl=0.0) is True
+    assert client.is_alive_cached(ttl=0.0) is True
+    assert len(calls) == 2, "once the TTL has elapsed the probe must run again"
+
+
+def test_is_alive_cached_reprobes_after_probe_failure(monkeypatch) -> None:
+    # A failed probe must not be cached: the next call has to re-probe so a
+    # recovered/replaced session is detected promptly.
+    import httpx
+
+    client = _conn(monkeypatch)
+    monkeypatch.setattr(
+        "httpx.Client.request",
+        lambda self, method, url, **k: httpx.Response(401, request=httpx.Request(method, url)),
+    )
+    assert client.is_alive_cached(ttl=30.0) is False
+    assert client._liveness_checked_at == 0.0, "a failed probe must not refresh the TTL"
+
+
+def test_connect_reuses_cached_client_without_reprobing(monkeypatch) -> None:
+    # End-to-end: two back-to-back ConnectionManager.connect() calls within the
+    # TTL hit /deployment/node/status only once.
+    import httpx
+
+    from vmware_aria.config import AppConfig, TargetConfig
+    from vmware_aria.connection import ConnectionManager
+
+    expiry_epoch_ms = int((time.time() + 6 * 3600) * 1000)
+
+    class TokenResp:
+        status_code = 200
+        content = b"{}"
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"token": "tok", "validity": expiry_epoch_ms}
+
+    monkeypatch.setattr("httpx.Client.post", lambda self, *a, **k: TokenResp())
+
+    probes: list = []
+
+    def fake_request(self, method, url, **k):
+        probes.append(url)
+        return httpx.Response(200, request=httpx.Request(method, url))
+
+    monkeypatch.setattr("httpx.Client.request", fake_request)
+
+    cfg = AppConfig(
+        targets={"prod": TargetConfig(host="h", username="u")},
+        default_target="prod",
+    )
+    monkeypatch.setattr(TargetConfig, "get_password", lambda self, name: "pw")
+
+    mgr = ConnectionManager(cfg)
+    first = mgr.connect("prod")
+    second = mgr.connect("prod")
+
+    assert first is second, "the cached client must be reused"
+    # connect() #1 creates the client (no liveness probe), connect() #2 probes
+    # once; a third within the TTL would add no probe.
+    assert len(probes) == 1, "back-to-back connect() within the TTL probes only once"
+    third = mgr.connect("prod")
+    assert third is first
+    assert len(probes) == 1, "still cached — no extra probe"
+
+
 def test_transport_error_after_reauth_is_wrapped(monkeypatch) -> None:
     # Regression for the post-reauth leak: a 401 forces a token re-acquire,
     # then the re-issued request hits a dropped connection. That transport
@@ -593,7 +697,7 @@ def test_stale_client_closed_before_replacement(monkeypatch) -> None:
     mgr = ConnectionManager(cfg)
 
     stale = MagicMock(name="stale-client")
-    stale.is_alive.return_value = False
+    stale.is_alive_cached.return_value = False
     mgr._clients["t1"] = stale
 
     fresh = MagicMock(name="fresh-client")

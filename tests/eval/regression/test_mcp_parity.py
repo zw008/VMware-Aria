@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 EXPECTED_TOOL_COUNT = 27
 EXPECTED_READ_COUNT = 20
 EXPECTED_WRITE_COUNT = 7
@@ -85,9 +87,71 @@ def test_mcp_tool_error_path_contains_404_hint(monkeypatch) -> None:
     assert "list the parent" in result["error"]
 
 
+def test_safe_error_passes_connection_error_through() -> None:
+    # issue #10: a dropped connection must surface its teaching hint through
+    # MCP instead of being masked as a generic "operation failed".
+    from mcp_server.server import _safe_error
+
+    hint = "Connection to aria-prod dropped. Run 'vmware-aria doctor'."
+    message = _safe_error(ConnectionError(hint), "get_resource")
+    assert hint in message
+    assert "operation failed" not in message
+
+
 def test_safe_error_still_masks_unexpected_exceptions() -> None:
     from mcp_server.server import _safe_error
 
     message = _safe_error(RuntimeError("internal /etc/path host:443 detail"), "get_resource")
     assert "internal" not in message
     assert message == "RuntimeError: operation failed."
+
+
+def test_cli_command_releases_connection_token(monkeypatch) -> None:
+    # issue #10: each CLI command builds a fresh ConnectionManager via
+    # _get_connection; without cleanup its per-invocation auth token is never
+    # released, accumulating server-side. The _friendly_errors wrapper must
+    # close every manager opened during the command.
+    from vmware_aria import cli
+
+    closed: list[object] = []
+
+    class FakeManager:
+        def disconnect_all(self) -> None:
+            closed.append(self)
+
+    monkeypatch.setattr(cli, "_OPEN_MANAGERS", [])
+
+    @cli._friendly_errors
+    def fake_command() -> str:
+        # Simulate _get_connection registering a manager for cleanup.
+        cli._OPEN_MANAGERS.append(FakeManager())
+        return "ok"
+
+    assert fake_command() == "ok"
+    assert len(closed) == 1, "command must release its ConnectionManager token"
+    assert cli._OPEN_MANAGERS == [], "registry must be drained after the command"
+
+
+def test_connection_cleanup_runs_even_on_error(monkeypatch) -> None:
+    # Cleanup lives in a finally, so a failing command still releases tokens.
+    import typer
+
+    from vmware_aria import cli
+    from vmware_aria.connection import AriaApiError
+
+    closed: list[object] = []
+
+    class FakeManager:
+        def disconnect_all(self) -> None:
+            closed.append(self)
+
+    monkeypatch.setattr(cli, "_OPEN_MANAGERS", [])
+
+    @cli._friendly_errors
+    def failing_command() -> None:
+        cli._OPEN_MANAGERS.append(FakeManager())
+        raise AriaApiError("boom", status_code=503, method="GET", path="/x")
+
+    with pytest.raises(typer.Exit):
+        failing_command()
+    assert len(closed) == 1, "token must be released even when the command errors"

@@ -66,9 +66,11 @@ def _safe_error(exc: Exception, tool: str) -> str:
     errors (ValueError/FileNotFoundError/KeyError/PermissionError) and
     AriaApiError (the connection layer's teaching errors — "404: list the
     parent collection first", "503: platform booting") pass through.
+    ConnectionError also passes through so a dropped connection surfaces its
+    teaching hint instead of being masked as a generic "operation failed".
     """
     logger.error("Tool %s failed", tool, exc_info=True)
-    if isinstance(exc, (AriaApiError, ValueError, FileNotFoundError, KeyError, PermissionError)):
+    if isinstance(exc, (AriaApiError, ValueError, FileNotFoundError, KeyError, PermissionError, ConnectionError)):
         return sanitize(str(exc), 300)
     return f"{type(exc).__name__}: operation failed."
 

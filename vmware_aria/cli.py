@@ -100,17 +100,43 @@ def _friendly_errors(fn):
         except (AriaApiError, FileNotFoundError, KeyError, OSError) as exc:
             console.print(f"[red]Error: {exc}[/red]")
             raise typer.Exit(1) from exc
+        finally:
+            # Each command builds a fresh ConnectionManager via
+            # _get_connection; release its auth token(s) so per-invocation
+            # tokens don't accumulate server-side on Aria.
+            _close_open_connections()
 
     return wrapper
 
 
+# ConnectionManagers created during the current command, closed by the
+# _friendly_errors wrapper once the command returns. The CLI is single-shot
+# (one command per process), so a module-level list is safe here.
+_OPEN_MANAGERS: list = []
+
+
+def _close_open_connections() -> None:
+    """Release tokens for every manager opened during this command."""
+    while _OPEN_MANAGERS:
+        mgr = _OPEN_MANAGERS.pop()
+        try:
+            mgr.disconnect_all()
+        except Exception:  # cleanup must never mask the command's own result
+            pass
+
+
 def _get_connection(target: str | None, config_path: Path | None = None):
-    """Return (AriaClient, AppConfig)."""
+    """Return (AriaClient, AppConfig).
+
+    The created ConnectionManager is registered for cleanup so its auth
+    token is released when the command finishes (see _friendly_errors).
+    """
     from vmware_aria.config import load_config
     from vmware_aria.connection import ConnectionManager
 
     cfg = load_config(config_path)
     mgr = ConnectionManager(cfg)
+    _OPEN_MANAGERS.append(mgr)
     name = target or cfg.default_target
     return mgr.connect(name), cfg
 
