@@ -82,8 +82,19 @@ def _hint_for_status(status_code: int, path: str) -> str:
     if status_code >= 500:
         return "Server-side error — retry shortly; check Aria Operations health."
     if status_code in (401, 403):
-        return "Authentication/authorization failed — check the account and its role."
+        return (
+            "Authentication/authorization failed — check username/auth_source in "
+            "~/.vmware-aria/config.yaml and the password env var "
+            "(VMWARE_ARIA_<TARGET>_PASSWORD) in ~/.vmware-aria/.env, plus the "
+            "account's role."
+        )
     return "Check the request and try again."
+
+
+def _is_tls_verify_error(exc: Exception) -> bool:
+    """True if a transport error looks like a TLS certificate verification failure."""
+    text = str(exc).lower()
+    return "certificate" in text or "ssl" in text or "verify" in text
 
 
 class AriaClient:
@@ -105,6 +116,7 @@ class AriaClient:
         # the process-global side-effects of warnings.filterwarnings().
         if not target.verify_ssl:
             import urllib3
+
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         self._client = httpx.Client(
@@ -154,9 +166,15 @@ class AriaClient:
                 path="/auth/token/acquire",
             ) from exc
         except (httpx.TimeoutException, httpx.TransportError) as exc:
+            tail = (
+                " The certificate could not be verified — for a self-signed lab "
+                "cert set `verify_ssl: false` for this target in "
+                "~/.vmware-aria/config.yaml."
+                if _is_tls_verify_error(exc)
+                else " Check the host/port and network, then retry."
+            )
             raise AriaApiError(
-                f"Aria Operations authentication to {self._target.host} could not "
-                f"connect: {exc}. Check the host/port and network, then retry.",
+                f"Aria Operations authentication to {self._target.host} could not connect: {exc}.{tail}",
                 method="POST",
                 path="/auth/token/acquire",
             ) from exc
@@ -164,9 +182,7 @@ class AriaClient:
 
         token = data.get("token")
         if not token:
-            raise ConnectionError(
-                "Aria Operations token acquisition succeeded but no token returned"
-            )
+            raise ConnectionError("Aria Operations token acquisition succeeded but no token returned")
 
         # `validity` is an epoch timestamp in MILLISECONDS (when the token
         # expires), not a duration. Default validity is 6 hours, sliding —
@@ -227,17 +243,21 @@ class AriaClient:
         reauthed = False
         while True:
             try:
-                resp = self._client.request(
-                    method, path, headers=self._headers(), params=params, json=json_data
-                )
+                resp = self._client.request(method, path, headers=self._headers(), params=params, json=json_data)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 if attempt < retries:
                     attempt += 1
                     time.sleep(_RETRY_DELAY_SEC)
                     continue
+                tail = (
+                    " The certificate could not be verified — for a self-signed "
+                    "lab cert set `verify_ssl: false` for this target in "
+                    "~/.vmware-aria/config.yaml."
+                    if _is_tls_verify_error(exc)
+                    else " Check the host/port and network, then retry."
+                )
                 raise AriaApiError(
-                    f"Aria Operations {method} {path} could not connect: {exc}. "
-                    "Check the host/port and network, then retry.",
+                    f"Aria Operations {method} {path} could not connect: {exc}.{tail}",
                     method=method,
                     path=path,
                 ) from exc

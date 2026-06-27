@@ -54,6 +54,7 @@ def mcp_cmd() -> None:
     Equivalent to the legacy `vmware-aria-mcp` console script.
     """
     import sys
+
     if sys.version_info < (3, 10):
         msg = (
             f"ERROR: vmware-aria MCP server requires Python >= 3.10 "
@@ -72,12 +73,8 @@ def mcp_cmd() -> None:
 
 # ─── Type aliases ────────────────────────────────────────────────────────────
 
-TargetOption = Annotated[
-    str | None, typer.Option("--target", "-t", help="Target name from config")
-]
-ConfigOption = Annotated[
-    Path | None, typer.Option("--config", "-c", help="Config file path")
-]
+TargetOption = Annotated[str | None, typer.Option("--target", "-t", help="Target name from config")]
+ConfigOption = Annotated[Path | None, typer.Option("--config", "-c", help="Config file path")]
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -146,6 +143,25 @@ def _json_output(data: object) -> None:
     console.print_json(json.dumps(data, indent=2, default=str))
 
 
+# ─── Init ────────────────────────────────────────────────────────────────────
+
+
+@app.command()
+def init(
+    force: Annotated[bool, typer.Option("--force", help="Overwrite an existing config without asking")] = False,
+    skip_test: Annotated[bool, typer.Option("--skip-test", help="Skip the post-setup connection test")] = False,
+) -> None:
+    """Interactive first-run setup: write config.yaml + .env, then offer a test.
+
+    Prompts for one Aria Operations target (host, username, auth source, port,
+    TLS verification) and its password. The password is stored grep-safe
+    (``b64:``) in ~/.vmware-aria/.env at mode 0600 — never plaintext on disk.
+    """
+    from vmware_aria.init_wizard import run_init
+
+    raise typer.Exit(run_init(force=force, skip_test=skip_test))
+
+
 # ─── Doctor ──────────────────────────────────────────────────────────────────
 
 
@@ -189,7 +205,9 @@ def resource_list(
     table.add_column("Status")
 
     for r in items:
-        health = f"{r['health_color']} ({r['health_score']})" if r.get("health_score") is not None else r["health_color"]
+        health = (
+            f"{r['health_color']} ({r['health_score']})" if r.get("health_score") is not None else r["health_color"]
+        )
         table.add_row(r["name"], r["id"][:36], health, r["status"])
 
     console.print(table)
@@ -213,7 +231,9 @@ def resource_get(
 @_friendly_errors
 def resource_metrics(
     resource_id: str,
-    metrics: Annotated[str, typer.Option("--metrics", "-m", help="Comma-separated metric keys")] = "cpu|usage_average,mem|usage_average",
+    metrics: Annotated[
+        str, typer.Option("--metrics", "-m", help="Comma-separated metric keys")
+    ] = "cpu|usage_average,mem|usage_average",
     hours: Annotated[int, typer.Option("--hours", help="History window in hours")] = 1,
     target: TargetOption = None,
     config: ConfigOption = None,
@@ -606,7 +626,9 @@ def report_generate(
     client, cfg = _get_connection(target, config)
     target_name = target or cfg.default_target or "default"
     rids = [r.strip() for r in resource_ids.split(",")] if resource_ids else None
-    result = generate_report(client, definition_id=definition_id, resource_ids=rids, audit_logger=_audit, target_name=target_name)
+    result = generate_report(
+        client, definition_id=definition_id, resource_ids=rids, audit_logger=_audit, target_name=target_name
+    )
     console.print(f"Report queued: [bold]{result['report_id']}[/bold] (status: {result['status']})")
     console.print("Poll with: vmware-aria report get <report_id>")
 
